@@ -2,5 +2,5 @@
 
 # 
 
-##### A growing collection of projects developed by Federico Mazzanti, showcasing skills in data analysis, visualization, predictive modeling, and artificial intelligence.
+A growing collection of projects developed by Federico Mazzanti, showcasing skills in data analysis, visualization, predictive modeling, and artificial intelligence.
 
