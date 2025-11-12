@@ -29,7 +29,7 @@ Australia-Wildfires-Dashboard/
 │ └── Historical_Wildfires.csv
 │
 ├── src/
-│ ├── init.py
+│ ├── __init__.py
 │ ├── app.py
 │ ├── callbacks.py
 │ ├── constants.py
