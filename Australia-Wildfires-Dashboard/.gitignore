@@ -1,0 +1,87 @@
+# -----------------------------
+# Python bytecode & caches
+# -----------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# -----------------------------
+# Virtual environments
+# -----------------------------
+.venv/
+venv/
+env/
+ENV/
+pip-wheel-metadata/
+.venv.bak/
+
+# -----------------------------
+# Build / packaging artifacts
+# -----------------------------
+build/
+dist/
+.eggs/
+*.egg-info/
+*.egg
+*.whl
+
+# -----------------------------
+# Test, coverage, and tooling
+# -----------------------------
+.pytest_cache/
+.coverage
+.coverage.*
+.cache/
+nosetests.xml
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.dmypy.json
+.pyre/
+.pytype/
+.ruff_cache/
+pytestdebug.log
+
+# -----------------------------
+# Notebooks
+# -----------------------------
+.ipynb_checkpoints/
+
+# -----------------------------
+# Logs & local output
+# -----------------------------
+*.log
+logs/
+*.tmp
+*.bak
+
+# -----------------------------
+# Environment & secrets
+# -----------------------------
+.env
+.env.*
+*.env
+*.secret
+*.key
+
+# -----------------------------
+# OS / Editor noise
+# -----------------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+# Linux
+.Trash-*
+# Editors/IDEs
+.vscode/
+.idea/
+*.iml
