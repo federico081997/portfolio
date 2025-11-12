@@ -22,7 +22,7 @@ Users can dynamically filter the data by **region** and **year**, and view the r
 - Data-driven annotations and legends for better interpretability.
 
 ## Project Structure
-
+```
 Australia-Wildfires-Dashboard/
 │
 ├── data/
@@ -40,7 +40,7 @@ Australia-Wildfires-Dashboard/
 │
 ├── README.md
 └── requirements.txt
-
+```
 
 ### Key modules
 - **`app.py`** — Entry point; initializes Dash app, layout, and callbacks.
@@ -51,7 +51,7 @@ Australia-Wildfires-Dashboard/
 - **`data_io.py`** — Data loading utilities.
 - **`constants.py`** — Region and year constants.
 
-## 🧮 Data
+## Data
 
 - **File:** `Historical_Wildfires.csv`
 - **Source:** Processed dataset containing monthly wildfire statistics by Australian region.
@@ -77,7 +77,7 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-### 4. Run the app from the project root
+### 4. Run the app
 ```bash
 python -m src.app
 ```
