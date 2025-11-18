@@ -6,7 +6,7 @@ This module constructs the overall page structure, including the title section,
 control panel, and grid-based visualization area.
 """
 
-from .components import (
+from components import (
     display_title,
     display_text,
     display_card,

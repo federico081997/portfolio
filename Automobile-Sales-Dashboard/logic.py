@@ -12,7 +12,7 @@ labels when they are too long, improving readability.
 """
 
 import pandas as pd
-from .constants import MONTHS, VEHICLE_TYPES
+from constants import MONTHS
 
 # Define month order for the dataframes
 MONTH_ORDER = {m: i for i, m in enumerate(MONTHS.keys())}

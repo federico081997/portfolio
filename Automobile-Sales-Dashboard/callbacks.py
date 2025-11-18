@@ -18,9 +18,9 @@ from typing import Any, Dict, Tuple
 import pandas as pd
 import dash
 from dash.dependencies import Input, Output
-from .logic import compute_yearly_info, compute_recession_info, wrap_label
-from .figures import plot
-from .constants import MONTHS, YEARS, VEHICLE_TYPES
+from logic import compute_yearly_info, compute_recession_info, wrap_label
+from figures import plot
+from constants import MONTHS, YEARS, VEHICLE_TYPES
 
 
 def register_callbacks(app: dash.Dash, df: pd.DataFrame) -> None:

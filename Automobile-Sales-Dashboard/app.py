@@ -11,13 +11,13 @@ interactive visualizations.
 from pathlib import Path
 import dash
 import dash_bootstrap_components as dbc
-from .constants import REPORT_TYPES, YEARS
-from .data_io import read_data
-from .layout import build_layout
-from .callbacks import register_callbacks
+from constants import REPORT_TYPES, YEARS
+from data_io import read_data
+from layout import build_layout
+from callbacks import register_callbacks
 
 # Resolve data path
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent
 DATA_PATH = PROJECT_ROOT / "data" / "Automobile_Sales.csv"
 
 # Load data
@@ -31,4 +31,4 @@ app.layout = build_layout(REPORT_TYPES, YEARS)
 register_callbacks(app, automobile_data)
 
 if __name__ == "__main__":
-    app.run()
+    app.run(debug=True)
