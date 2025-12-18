@@ -1,0 +1,17 @@
+# Core app framework
+dash=3.3.0
+dash-bootstrap-components=2.0.4
+
+# Data handling
+pandas=2.3.3
+numpy=2.3.4
+
+# Visualisation
+plotly=6.4.0
+folium=0.20.0
+
+# Machine learning
+scikit-learn=1.7.2
+
+# Data acquisition
+requests=2.32.5
