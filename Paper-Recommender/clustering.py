@@ -1,10 +1,11 @@
 from pathlib import Path
-import numpy as np
-from sklearn.cluster import KMeans
-import umap
 
-from recommender import load_artifacts
+import numpy as np
+import umap
+from sklearn.cluster import KMeans
+
 from labeling import label_clusters
+from recommender import load_artifacts
 
 
 def run_kmeans_clustering(
@@ -14,11 +15,24 @@ def run_kmeans_clustering(
     n_init: int = 10,
 ) -> np.ndarray:
     """
-    Run K-means clustering on the embedding matrix.
-    """
-    kmeans = KMeans(n_clusters=n_clusters, random_state=random_state, n_init=n_init)
+    Cluster embedding vectors using K-means.
 
-    # Predict cluster labels
+    Args:
+        embeddings: Embedding matrix of shape (n_samples, n_features).
+        n_clusters: Number of clusters to create.
+        random_state: Random seed for reproducibility.
+        n_init: Number of K-means initializations.
+
+    Returns:
+        np.ndarray: Cluster label for each input sample.
+    """
+    kmeans = KMeans(
+        n_clusters=n_clusters,
+        random_state=random_state,
+        n_init=n_init,
+    )
+
+    # Fit the model and assign a cluster label to each embedding.
     cluster_labels = kmeans.fit_predict(embeddings)
 
     return cluster_labels
@@ -32,7 +46,19 @@ def run_umap_projection(
     metric: str = "cosine",
 ) -> np.ndarray:
     """
-    Reduce embeddings with UMAP.
+    Project high-dimensional embeddings into a lower-dimensional space using UMAP.
+
+    This is mainly used for visualization.
+
+    Args:
+        embeddings: Embedding matrix of shape (n_samples, n_features).
+        n_neighbors: Number of neighboring points used by UMAP.
+        n_components: Number of output dimensions.
+        random_state: Random seed for reproducibility.
+        metric: Distance metric used by UMAP.
+
+    Returns:
+        np.ndarray: Projected coordinates of shape (n_samples, n_components).
     """
     reducer = umap.UMAP(
         n_neighbors=n_neighbors,
@@ -41,30 +67,34 @@ def run_umap_projection(
         metric=metric,
     )
 
-    # Perform the UMAP projection on the embeddings
+    # Compute the low-dimensional embedding coordinates.
     coords = reducer.fit_transform(embeddings)
 
     return coords
 
 
 def main() -> None:
-    # Define project root
+    """
+    Cluster papers, compute 2D visualization coordinates, generate cluster labels,
+    and save the resulting outputs.
+    """
+    # Define the project root directory.
     project_root = Path(__file__).parent
 
-    # Define paths where to save paper clustering outputs
+    # Define output file paths.
     clustered_output_path = project_root / "data" / "processed" / "papers_clustered.csv"
     cluster_summary_path = project_root / "data" / "processed" / "cluster_summary.csv"
 
-    # Load dataset and embeddings
+    # Load the dataset, embeddings, and faiss index.
     df, embeddings, _ = load_artifacts()
 
     print(f"Dataset shape: {df.shape}")
     print(f"Embeddings shape: {embeddings.shape}")
 
-    # K-means clustering
-    # Use number of known categories as the number of clusters
+    # Use the number of unique known categories as the number of K-means clusters.
     n_clusters = df["category"].nunique()
-    print(f"Running K-means with {n_clusters} clusters...")
+    print(f"Running K-means clustering with {n_clusters} clusters...")
+
     cluster_labels = run_kmeans_clustering(
         embeddings=embeddings,
         n_clusters=n_clusters,
@@ -73,8 +103,8 @@ def main() -> None:
     )
     df["cluster_id"] = cluster_labels
 
-    # UMAP for visualization
-    print("Calculating 2D UMAP for visualization...")
+    # Generate 2D UMAP coordinates for visualization.
+    print("Computing 2D UMAP projection...")
     coords_2d = run_umap_projection(
         embeddings=embeddings,
         n_neighbors=40,
@@ -85,8 +115,8 @@ def main() -> None:
     df["x"] = coords_2d[:, 0]
     df["y"] = coords_2d[:, 1]
 
-    # TF-IDF cluster keywords
-    print("Creating TF-IDF cluster keywords and generating labels with Ollama...")
+    # Generate TF-IDF-based cluster keywords and optional Ollama-based cluster labels.
+    print("Generating cluster keywords and labels...")
     df, cluster_summary = label_clusters(
         df=df,
         cluster_col="cluster_id",
@@ -99,12 +129,12 @@ def main() -> None:
         host="http://localhost:11434",
     )
 
-    # Save the outputs
+    # Save the enriched paper dataset and cluster summary.
     df.to_csv(clustered_output_path, index=False)
     cluster_summary.to_csv(cluster_summary_path, index=False)
 
-    print("Clustered dataset saved to:", clustered_output_path)
-    print("Cluster summary saved to:", cluster_summary_path)
+    print(f"Clustered dataset saved to: {clustered_output_path}")
+    print(f"Cluster summary saved to: {cluster_summary_path}")
     print("\nCluster summary:")
     print(cluster_summary.to_string(index=False))
 
