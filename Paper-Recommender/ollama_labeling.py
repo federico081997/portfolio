@@ -1,18 +1,27 @@
-import re
-import requests
 import json
 import math
+import re
+
+import requests
 
 
 def build_prompt(cluster_batch: dict[int, list[str]]) -> str:
     """
-    Build a prompt for a batch of clusters.
+    Build a prompt for labeling a batch of clusters.
 
-    Each cluster is provided as:
-    {
-        cluster_id: [keyword1, keyword2, ...]
-    }
+    Each cluster is represented as:
+        {cluster_id: [keyword1, keyword2, ...]}
+
+    The prompt instructs the model to return a JSON mapping
+    cluster IDs to short, human-readable labels.
+
+    Args:
+        cluster_batch: Dictionary mapping cluster IDs to keyword lists.
+
+    Returns:
+        str: Formatted prompt string.
     """
+    # Format cluster data into text lines.
     lines = []
     for cluster_id, keywords in cluster_batch.items():
         keywords_text = ", ".join(keywords)
@@ -20,6 +29,7 @@ def build_prompt(cluster_batch: dict[int, list[str]]) -> str:
 
     clusters_text = "\n".join(lines)
 
+    # Construct prompt with strict output instructions.
     prompt = f"""
         You are labeling clusters of scientific papers.
 
@@ -43,10 +53,24 @@ def build_prompt(cluster_batch: dict[int, list[str]]) -> str:
 
 
 def extract_json(text: str) -> dict[str, str]:
-    """Try to extract a JSON object from Ollama output"""
+    """
+    Extract a JSON object from model output.
+
+    The function first attempts direct parsing. If that fails,
+    it searches for a JSON-like substring and parses that.
+
+    Args:
+        text: Raw response text from the model.
+
+    Returns:
+        dict: Parsed JSON dictionary.
+
+    Raises:
+        ValueError: If no valid JSON object can be extracted.
+    """
     text = text.strip()
 
-    # First try direct JSON parse
+    # Attempt direct JSON parsing.
     try:
         data = json.loads(text)
         if isinstance(data, dict):
@@ -54,7 +78,7 @@ def extract_json(text: str) -> dict[str, str]:
     except json.JSONDecodeError:
         pass
 
-    # Try to find first JSON object in the text
+    # Attempt to extract JSON substring using regex.
     match = re.search(r"\{.*\}", text, flags=re.DOTALL)
     if match:
         json_text = match.group(0)
@@ -77,46 +101,45 @@ def generate_labels_with_ollama(
     verbose: bool = True,
 ) -> dict[int, str]:
     """
-    Generate labels for all clusters in batches.
+    Generate labels for clusters using the Ollama API in batches.
 
-    Parameters
-    ----------
-    clusters_keywords : dict[int, list[str]]
-        Mapping cluster_id -> top keywords
-    batch_size : int
-        Number of clusters per Ollama request
-    model : str
-        Ollama model name
-    host : str
-        Ollama host URL
-    timeout : int
-        Request timeout in seconds
-    verbose : bool
-        Print progress if True
+    This function:
+    - splits clusters into batches
+    - sends prompts to the Ollama model
+    - parses JSON responses
+    - handles errors gracefully
+    - returns a mapping of cluster_id -> label
 
-    Returns
-    -------
-    dict[int, str]
-        Mapping cluster_id -> generated label
+    Args:
+        clusters_keywords: Mapping cluster_id -> list of keywords.
+        batch_size: Number of clusters per API request.
+        model: Ollama model name.
+        host: Ollama server URL.
+        timeout: Request timeout in seconds.
+        verbose: Whether to print progress messages.
+
+    Returns:
+        dict: Mapping of cluster_id to generated label.
     """
     all_labels = {}
     cluster_items = list(clusters_keywords.items())
 
+    # Process clusters in batches.
     for batch_start in range(0, len(cluster_items), batch_size):
         batch_items = cluster_items[batch_start : batch_start + batch_size]
         batch_dict = dict(batch_items)
 
-        # Print progress
+        # Progress logging.
         if verbose:
             batch_num = batch_start // batch_size + 1
             total_batches = math.ceil(len(cluster_items) / batch_size)
-            print(f"Generating Ollama labels for batch {batch_num}/{total_batches}...")
+            print(f"Generating labels: batch {batch_num}/{total_batches}")
 
-        # Generate labels for a batch of clusters using Ollama
+        # Build prompt for current batch.
         prompt = build_prompt(batch_dict)
 
-        # Generate response from Ollama API
         try:
+            # Send request to Ollama API.
             response = requests.post(
                 f"{host}/api/generate",
                 json={
@@ -133,36 +156,34 @@ def generate_labels_with_ollama(
             )
             response.raise_for_status()
 
+            # Extract and parse model output.
             raw_text = response.json()["response"]
             parsed = extract_json(raw_text)
 
-        except requests.exceptions.ConnectionError as e:
+        except requests.exceptions.ConnectionError:
             print(
-                f"[ERROR] Unable to connect to Ollama at {host}. "
-                "Ensure the Ollama service is running."
+                f"[ERROR] Could not connect to Ollama at {host}. "
+                "Make sure the service is running."
             )
             parsed = {}
 
         except requests.exceptions.Timeout:
-            print(f"[ERROR] Request to Ollama timed out after {timeout} seconds.")
+            print(f"[ERROR] Request timed out after {timeout} seconds.")
             parsed = {}
 
         except requests.exceptions.HTTPError as e:
-            print(f"[ERROR] Ollama returned an HTTP error: {str(e)}")
+            print(f"[ERROR] HTTP error from Ollama: {str(e)}")
             parsed = {}
 
         except ValueError:
-            print(
-                "[ERROR] Failed to parse Ollama response. "
-                "The output may not be valid JSON."
-            )
+            print("[ERROR] Invalid JSON returned by Ollama.")
             parsed = {}
 
         except Exception as e:
-            print(f"[ERROR] Unexpected error during Ollama labeling: {str(e)}")
+            print(f"[ERROR] Unexpected error: {str(e)}")
             parsed = {}
 
-        # Process labels for this batch
+        # Assign labels for current batch.
         for cluster_id in batch_dict:
             label = (parsed.get(str(cluster_id)) or "").strip()
             all_labels[cluster_id] = label
