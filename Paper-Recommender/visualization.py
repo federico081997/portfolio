@@ -1,8 +1,7 @@
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from dash import html
-import dash_bootstrap_components as dbc
+
 
 # --------------------------------
 # GLOBAL VISUAL THEME
@@ -21,6 +20,7 @@ BORDER = "#DEE2E6"
 
 CLUSTER_COLORS = px.colors.qualitative.Set2
 
+
 # --------------------------------
 # FIGURES
 # --------------------------------
@@ -33,7 +33,19 @@ def apply_plot_style(
     show_y_grid: bool = True,
 ) -> go.Figure:
     """
-    Apply a consistent visual theme to Plotly figures.
+    Apply a consistent visual style to a Plotly figure.
+
+    This function standardizes the layout, font styling, colors, axis
+    appearance, and hover label formatting used across the dashboard.
+
+    Args:
+        fig: Plotly figure to style.
+        height: Figure height in pixels.
+        show_x_grid: Whether to display x-axis grid lines.
+        show_y_grid: Whether to display y-axis grid lines.
+
+    Returns:
+        go.Figure: The styled Plotly figure.
     """
     fig.update_layout(
         template="plotly_white",
@@ -84,26 +96,42 @@ def apply_plot_style(
 
 
 def build_topic_scatter_plot(
-    df: pd.DataFrame, selected_cluster_id: int | str | None = None
+    df: pd.DataFrame,
+    selected_cluster_id: int | str | None = None,
 ) -> go.Figure:
     """
-    Build an interactive 2D topic map using UMAP coordinates.
+    Build an interactive 2D topic scatter plot using UMAP coordinates.
 
     Behavior:
-    - No selected cluster: show all papers colored by cluster
-    - selected cluster:
-        * Selected cluster is hoverable
-        * Other papers are faint and not hoverable
-        * Plot zooms to the relevant cluster
+    - If no cluster is selected, all papers are shown and colored by cluster.
+    - If a cluster is selected:
+        - papers in that cluster remain hoverable and clickable
+        - all other papers are shown faintly in the background
+        - the plot zooms into the selected cluster region
+
+    Args:
+        df: DataFrame containing UMAP coordinates and paper metadata.
+        selected_cluster_id: Cluster to highlight. If None, all clusters are shown.
+
+    Returns:
+        go.Figure: Interactive topic scatter plot.
     """
-    # Prepare the dataframe for the figure
+    # Create a copy so the original dataframe is not modified.
     plot_df = df.copy().reset_index(drop=True)
+
+    # Store the row index explicitly so it can be used later in click callbacks.
     plot_df["paper_id"] = plot_df.index
+
+    # Convert cluster ids to strings for Plotly categorical coloring.
     plot_df["cluster_str"] = plot_df["cluster_id"].astype(str)
+
+    # Ensure published_date is in datetime format if needed elsewhere.
     plot_df["published_date"] = pd.to_datetime(
-        plot_df["published_date"], errors="coerce"
+        plot_df["published_date"],
+        errors="coerce",
     )
 
+    # Default view: show all papers colored by cluster.
     if selected_cluster_id is None:
         fig = px.scatter(
             plot_df,
@@ -129,32 +157,44 @@ def build_topic_scatter_plot(
 
         return apply_plot_style(fig)
 
+    # Convert selected cluster id to string so it matches cluster_str.
     selected_cluster_id = str(selected_cluster_id)
 
+    # Separate the selected cluster from all remaining papers.
     selected_df = plot_df[plot_df["cluster_str"] == selected_cluster_id].copy()
     other_df = plot_df[plot_df["cluster_str"] != selected_cluster_id].copy()
 
     fig = go.Figure()
 
-    # Trace 1: Background papers, non-hoverable
+    # Background papers are drawn faintly and are not hoverable.
     fig.add_trace(
         go.Scattergl(
             x=other_df["x"],
             y=other_df["y"],
             mode="markers",
-            marker=dict(size=4, color=SECONDARY, opacity=0.06, line=dict(width=0)),
+            marker=dict(
+                size=4,
+                color=SECONDARY,
+                opacity=0.06,
+                line=dict(width=0),
+            ),
             hoverinfo="skip",
             showlegend=False,
         )
     )
 
-    # Trace 2: selected cluster, hoverable and clickable
+    # The selected cluster remains fully interactive.
     fig.add_trace(
         go.Scattergl(
             x=selected_df["x"],
             y=selected_df["y"],
             mode="markers",
-            marker=dict(size=5, color=PRIMARY, opacity=0.92, line=dict(width=0)),
+            marker=dict(
+                size=5,
+                color=PRIMARY,
+                opacity=0.92,
+                line=dict(width=0),
+            ),
             text=selected_df["title"],
             customdata=selected_df[["paper_id"]].to_numpy(),
             hovertemplate="<b>%{text}</b><extra></extra>",
@@ -162,14 +202,13 @@ def build_topic_scatter_plot(
         )
     )
 
-    # Compute zoom window for selected cluster
+    # Zoom into the selected cluster with a small padding around the points.
     if not selected_df.empty:
         x_min = selected_df["x"].min()
         x_max = selected_df["x"].max()
         y_min = selected_df["y"].min()
         y_max = selected_df["y"].max()
 
-        # Padding so points do not touch plot edges
         x_pad = max((x_max - x_min) * 0.10, 0.5)
         y_pad = max((y_max - y_min) * 0.10, 0.5)
 
@@ -191,14 +230,21 @@ def build_cluster_size_bar_chart(
     top_n: int = 20,
 ) -> go.Figure:
     """
-    Build a horizontal bar chart of the largest clusters.
+    Build a horizontal bar chart showing the largest clusters.
 
-    Expected columns:
+    Expected columns in cluster_summary:
     - cluster_id
     - cluster_label
     - cluster_size
+
+    Args:
+        cluster_summary: DataFrame containing cluster summary information.
+        top_n: Number of largest clusters to display.
+
+    Returns:
+        go.Figure: Horizontal bar chart of cluster sizes.
     """
-    # Prepare the dataframe for the figure
+    # Prepare a copy of the input data for plotting.
     plot_df = cluster_summary.copy()
     plot_df["cluster_str"] = plot_df["cluster_id"].astype(str)
     plot_df = plot_df.head(top_n).sort_values("cluster_size", ascending=True)
@@ -217,7 +263,7 @@ def build_cluster_size_bar_chart(
 
     fig.update_traces(
         marker=dict(color=PRIMARY, line=dict(width=0)),
-        hovertemplate=("<b>%{y}</b><br>" "Papers: %{x}<br>" "<extra></extra>"),
+        hovertemplate="<b>%{y}</b><br>Papers: %{x}<br><extra></extra>",
     )
 
     fig.update_layout(
@@ -229,8 +275,15 @@ def build_cluster_size_bar_chart(
 
 
 def build_cluster_size_histogram(cluster_summary: pd.DataFrame) -> go.Figure:
-    """Cluster size histogram"""
+    """
+    Build a histogram showing the distribution of cluster sizes.
 
+    Args:
+        cluster_summary: DataFrame containing cluster summary information.
+
+    Returns:
+        go.Figure: Histogram of cluster sizes.
+    """
     fig = px.histogram(
         cluster_summary,
         x="cluster_size",
@@ -245,9 +298,7 @@ def build_cluster_size_histogram(cluster_summary: pd.DataFrame) -> go.Figure:
 
     fig.update_traces(
         marker=dict(color=PRIMARY, line=dict(width=1, color=BACKGROUND)),
-        hovertemplate=(
-            "<b>Range:</b> %{x}<br>" "<b>Clusters:</b> %{y}<br>" "<extra></extra>"
-        ),
+        hovertemplate="<b>Range:</b> %{x}<br><b>Clusters:</b> %{y}<br><extra></extra>",
     )
 
     return apply_plot_style(fig)
@@ -257,8 +308,17 @@ def build_category_distribution_bar_chart(
     df: pd.DataFrame,
     top_n: int = 20,
 ) -> go.Figure:
+    """
+    Build a horizontal bar chart showing the most frequent paper categories.
 
-    # Prepare data for the figure
+    Args:
+        df: DataFrame containing paper metadata.
+        top_n: Number of top categories to display.
+
+    Returns:
+        go.Figure: Horizontal bar chart of category counts.
+    """
+    # Count papers per category and keep the most frequent ones.
     category_counts = df["category"].value_counts().head(top_n).reset_index()
     category_counts.columns = ["category", "paper_count"]
     category_counts = category_counts.sort_values("paper_count", ascending=True)
@@ -274,7 +334,10 @@ def build_category_distribution_bar_chart(
         },
     )
 
-    fig.update_layout(showlegend=False, yaxis_title=None)
+    fig.update_layout(
+        showlegend=False,
+        yaxis_title=None,
+    )
 
     fig.update_traces(
         marker=dict(color=PRIMARY, line=dict(width=0)),
@@ -287,14 +350,24 @@ def build_category_distribution_bar_chart(
 
 
 def build_publication_trend_line_chart(df: pd.DataFrame) -> go.Figure:
+    """
+    Build a line chart showing publication counts by year.
 
-    # Prepare the data
+    Args:
+        df: DataFrame containing paper metadata, including published_date.
+
+    Returns:
+        go.Figure: Line chart of yearly publication volume.
+    """
+    # Create a copy and extract publication years.
     plot_df = df.copy()
     plot_df["published_date"] = pd.to_datetime(
-        plot_df["published_date"], errors="coerce"
+        plot_df["published_date"],
+        errors="coerce",
     )
     plot_df["year"] = plot_df["published_date"].dt.year
 
+    # Aggregate the number of papers published each year.
     yearly_counts = (
         plot_df.groupby("year")
         .size()
@@ -313,7 +386,10 @@ def build_publication_trend_line_chart(df: pd.DataFrame) -> go.Figure:
         },
     )
 
-    fig.update_layout(xaxis_title="Year", yaxis_title="Number of Papers")
+    fig.update_layout(
+        xaxis_title="Year",
+        yaxis_title="Number of Papers",
+    )
 
     fig.update_traces(
         line=dict(color=PRIMARY, width=2.5),
