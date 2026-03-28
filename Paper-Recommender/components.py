@@ -1,8 +1,15 @@
 import pandas as pd
-from dash import html, dcc
 import dash_bootstrap_components as dbc
+from dash import dcc, html
 
-from visualization import PRIMARY, TEXT, SURFACE, BORDER, HEADER_BG, MUTED_TEXT
+from visualization import (
+    BORDER,
+    HEADER_BG,
+    MUTED_TEXT,
+    PRIMARY,
+    SURFACE,
+    TEXT,
+)
 
 
 # --------------------------------
@@ -11,8 +18,17 @@ from visualization import PRIMARY, TEXT, SURFACE, BORDER, HEADER_BG, MUTED_TEXT
 
 
 def build_stats_card(title: str, value_id: str, value: str | None = None) -> dbc.Card:
-    """Build a small summary card with optional value"""
+    """
+    Build a small summary card with an optional displayed value.
 
+    Args:
+        title: Label shown at the top of the card.
+        value_id: Component ID for the displayed value.
+        value: Initial value shown in the card. Defaults to "0" if None.
+
+    Returns:
+        dbc.Card: Styled summary card component.
+    """
     display_value = value if value is not None else "0"
 
     return dbc.Card(
@@ -21,7 +37,10 @@ def build_stats_card(title: str, value_id: str, value: str | None = None) -> dbc
                 html.Div(
                     title,
                     className="text-muted",
-                    style={"fontSize": "0.85rem", "lineHeight": 1.2},
+                    style={
+                        "fontSize": "0.85rem",
+                        "lineHeight": 1.2,
+                    },
                 ),
                 html.H3(
                     display_value,
@@ -46,8 +65,17 @@ def build_stats_card(title: str, value_id: str, value: str | None = None) -> dbc
 
 def build_graph_card(title: str, graph_component) -> dbc.Card:
     """
-    Wrap a graph inside a Bootstrap card.
-    Plot titles should not be inside figures
+    Wrap a graph component inside a styled Bootstrap card.
+
+    Plot titles are kept outside the figure itself and displayed in the card
+    header instead.
+
+    Args:
+        title: Card title shown in the header.
+        graph_component: Dash graph component or any renderable UI component.
+
+    Returns:
+        dbc.Card: Styled graph card component.
     """
     return dbc.Card(
         [
@@ -55,7 +83,11 @@ def build_graph_card(title: str, graph_component) -> dbc.Card:
                 html.H5(
                     title,
                     className="mb-0",
-                    style={"color": TEXT, "fontweight": 600, "fontSize": "1rem"},
+                    style={
+                        "color": TEXT,
+                        "fontweight": 600,
+                        "fontSize": "1rem",
+                    },
                 ),
                 style={
                     "backgroundColor": HEADER_BG,
@@ -85,14 +117,26 @@ def build_graph_card(title: str, graph_component) -> dbc.Card:
 
 
 def build_default_paper_details_card(default_text: str) -> dbc.Card:
-    """Default paper details card shown before a paper is clicked"""
+    """
+    Build the default paper details card shown before a paper is selected.
+
+    Args:
+        default_text: Placeholder message displayed in the card body.
+
+    Returns:
+        dbc.Card: Styled placeholder details card.
+    """
     return dbc.Card(
         [
             dbc.CardHeader(
                 html.H4(
                     "Paper Details",
                     className="mb-0",
-                    style={"color": TEXT, "fontweight": "600", "fontSize": "1rem"},
+                    style={
+                        "color": TEXT,
+                        "fontweight": "600",
+                        "fontSize": "1rem",
+                    },
                 ),
                 style={
                     "backgroundColor": HEADER_BG,
@@ -114,7 +158,10 @@ def build_default_paper_details_card(default_text: str) -> dbc.Card:
                         },
                     ),
                 ],
-                style={"BackgroundColor": SURFACE, "padding": "1rem"},
+                style={
+                    "BackgroundColor": SURFACE,
+                    "padding": "1rem",
+                },
             ),
         ],
         className="card-hover h-100",
@@ -128,14 +175,26 @@ def build_default_paper_details_card(default_text: str) -> dbc.Card:
 
 
 def build_paper_details_card(df: pd.DataFrame, paper_id: int) -> dbc.Card:
-    """Build details card for a clicked paper"""
-    # Prepare dataframe
+    """
+    Build a detailed information card for a selected paper.
+
+    The card includes metadata such as category, cluster information,
+    publication date, authors, UMAP coordinates, and the abstract.
+
+    Args:
+        df: DataFrame containing paper metadata.
+        paper_id: Integer identifier of the selected paper.
+
+    Returns:
+        dbc.Card: Styled paper details card.
+    """
+    # Prepare a copy so the original dataframe is not modified.
     df = df.copy().reset_index(drop=True)
     df["paper_id"] = df.index
     df["cluster_str"] = df["cluster_id"].astype(str)
     df["published_date"] = pd.to_datetime(df["published_date"], errors="coerce")
 
-    # Extract information from row with paper_id
+    # Extract the selected paper row.
     row = df.loc[df["paper_id"] == paper_id].iloc[0]
 
     title = row.get("title", "Untitled")
@@ -148,7 +207,7 @@ def build_paper_details_card(df: pd.DataFrame, paper_id: int) -> dbc.Card:
     y_val = row.get("y", "N/A")
     published_date = row.get("published_date", "Unknown").strftime("%Y-%m-%d")
 
-    # Define rows to display
+    # Build the metadata rows shown above the abstract.
     meta_rows = [
         meta_row("Category", str(category)),
         meta_row("Cluster Label", str(cluster_label)),
@@ -191,7 +250,12 @@ def build_paper_details_card(df: pd.DataFrame, paper_id: int) -> dbc.Card:
                         },
                     ),
                     html.Div(meta_rows),
-                    html.Hr(style={"borderColor": BORDER, "margin": "0.9rem 0"}),
+                    html.Hr(
+                        style={
+                            "borderColor": BORDER,
+                            "margin": "0.9rem 0",
+                        }
+                    ),
                     html.H6(
                         "Abstract",
                         className="mb-2",
@@ -238,27 +302,24 @@ def build_tabs_card(
     default_tab: str | None = None,
 ) -> dbc.Card:
     """
-    Build a reusable tabs card.
+    Build a reusable tabs card with dynamic content.
 
-    Parameters
-    ----------
-    tabs : list of dict
-        Example:
-        [
-            {"label": "Explore", "value": "explore"},
-            {"label": "Search", "value": "search"},
-        ]
+    Args:
+        tabs: List of tab definitions, for example:
+            [
+                {"label": "Explore", "value": "explore"},
+                {"label": "Search", "value": "search"},
+            ]
+        card_id: ID assigned to the Tabs component.
+        content_id: ID assigned to the dynamic content container.
+        default_tab: Default active tab. If None, the first tab is used.
 
-    card_id : str
-        ID of the Tabs component
+    Returns:
+        dbc.Card: Styled tabs card component.
 
-    content_id : str
-        ID of the content container (used in callback)
-
-    default_tab : str
-        Default active tab (if None, uses first tab)
+    Raises:
+        ValueError: If the tabs list is empty.
     """
-
     if not tabs:
         raise ValueError("tabs list cannot be empty")
 
@@ -267,7 +328,7 @@ def build_tabs_card(
 
     return dbc.Card(
         [
-            # Tabs in header
+            # Tabs are placed in the card header.
             dbc.CardHeader(
                 dbc.Tabs(
                     [
@@ -286,7 +347,7 @@ def build_tabs_card(
                     "borderBottom": f"1px solid {BORDER}",
                 },
             ),
-            # Dynamic content
+            # The body contains a placeholder for callback-driven content.
             dbc.CardBody(
                 html.Div(
                     html.Div(id=content_id),
@@ -318,15 +379,29 @@ def build_search_bar(
     input_type: str = "text",
     button_id: str = "search-button",
 ) -> dbc.InputGroup:
-    """Build a search bar with a button"""
+    """
+    Build a search bar with a text input and a button.
 
+    Args:
+        input_placeholder: Placeholder text shown inside the input field.
+        button_text: Text displayed on the search button.
+        input_id: ID assigned to the input component.
+        input_type: HTML input type for the input field.
+        button_id: ID assigned to the button component.
+
+    Returns:
+        dbc.InputGroup: Styled input group containing the search input and button.
+    """
     return dbc.InputGroup(
         [
             dbc.Input(
                 id=input_id,
                 placeholder=input_placeholder,
                 type=input_type,
-                style={"backgroundColor": SURFACE, "height": "38px"},
+                style={
+                    "backgroundColor": SURFACE,
+                    "height": "38px",
+                },
             ),
             dbc.Button(
                 button_text,
@@ -349,8 +424,18 @@ def build_select(
     dropdown_id: str = "dropdown",
     placeholder: str | None = None,
 ) -> dcc.Dropdown:
-    """Build a dropdown menu"""
+    """
+    Build a styled select dropdown component.
 
+    Args:
+        options: List of dropdown options.
+        value: Initially selected value.
+        dropdown_id: ID assigned to the dropdown component.
+        placeholder: Placeholder text shown when no value is selected.
+
+    Returns:
+        dcc.Dropdown: Styled dropdown/select component.
+    """
     return dbc.Select(
         id=dropdown_id,
         options=options,
@@ -363,7 +448,21 @@ def build_select(
 
 def build_search_result_button(row) -> dbc.Button:
     """
-    Clickable search result card.
+    Build a clickable search result card wrapped in a button.
+
+    The displayed information includes:
+    - result rank
+    - score
+    - title
+    - category and year
+    - authors
+    - explanation for the recommendation
+
+    Args:
+        row: Row-like object containing result metadata.
+
+    Returns:
+        dbc.Button: Clickable result card component.
     """
     title = str(row.get("title", "Untitled"))
     category = str(row.get("category", "Unknown"))
@@ -379,6 +478,7 @@ def build_search_result_button(row) -> dbc.Button:
         dbc.Card(
             dbc.CardBody(
                 [
+                    # Top row with rank and score.
                     html.Div(
                         [
                             html.Span(
@@ -400,6 +500,7 @@ def build_search_result_button(row) -> dbc.Button:
                         ],
                         className="mb-2",
                     ),
+                    # Paper title.
                     html.H6(
                         title,
                         className="mb-2",
@@ -410,6 +511,7 @@ def build_search_result_button(row) -> dbc.Button:
                             "textAlign": "left",
                         },
                     ),
+                    # Category and year.
                     html.Div(
                         f"{category} • {year}",
                         className="mb-1",
@@ -419,6 +521,7 @@ def build_search_result_button(row) -> dbc.Button:
                             "textAlign": "left",
                         },
                     ),
+                    # Authors.
                     html.Div(
                         authors,
                         className="mb-2",
@@ -428,6 +531,7 @@ def build_search_result_button(row) -> dbc.Button:
                             "textAlign": "left",
                         },
                     ),
+                    # Recommendation explanation.
                     html.Div(
                         explanation,
                         style={
@@ -454,7 +558,17 @@ def build_search_result_button(row) -> dbc.Button:
 
 
 def build_top_k_results_card() -> dbc.Card:
-    """Build card of top-k search results"""
+    """
+    Build the container card used to display top-k search results.
+
+    The card includes:
+    - a header title
+    - a small results summary area
+    - a scrollable container for result cards
+
+    Returns:
+        dbc.Card: Styled search results card.
+    """
     return dbc.Card(
         [
             dbc.CardHeader(
@@ -477,6 +591,7 @@ def build_top_k_results_card() -> dbc.Card:
             ),
             dbc.CardBody(
                 [
+                    # Small summary text above the search results list.
                     html.Div(
                         id="search-results-header",
                         children="",
@@ -486,6 +601,7 @@ def build_top_k_results_card() -> dbc.Card:
                             "color": MUTED_TEXT,
                         },
                     ),
+                    # Scrollable search results container.
                     html.Div(
                         id="search-results",
                         style={
@@ -518,7 +634,16 @@ def build_top_k_results_card() -> dbc.Card:
 
 
 def build_no_results_card(query: str, text: str) -> dbc.Card:
-    """Build card for no search results"""
+    """
+    Build a card shown when a search returns no results.
+
+    Args:
+        query: User search query.
+        text: Additional explanatory message displayed below the main notice.
+
+    Returns:
+        dbc.Card: Styled no-results card.
+    """
     return dbc.Card(
         [
             dbc.CardHeader(
@@ -541,6 +666,7 @@ def build_no_results_card(query: str, text: str) -> dbc.Card:
             ),
             dbc.CardBody(
                 [
+                    # Main no-results message.
                     html.Div(
                         f'No results found for "{query}"',
                         style={
@@ -549,6 +675,7 @@ def build_no_results_card(query: str, text: str) -> dbc.Card:
                             "marginBottom": "0.5rem",
                         },
                     ),
+                    # Additional helper text.
                     html.Div(
                         text,
                         style={
@@ -579,7 +706,16 @@ def build_no_results_card(query: str, text: str) -> dbc.Card:
 
 def meta_row(label: str, value) -> html.Div:
     """
-    Compact metadata row that wraps well on phone.
+    Build a compact metadata row for paper details.
+
+    This helper is designed to wrap cleanly on smaller screens.
+
+    Args:
+        label: Metadata field label.
+        value: Metadata value to display.
+
+    Returns:
+        html.Div: Styled metadata row.
     """
     return html.Div(
         [
@@ -602,5 +738,7 @@ def meta_row(label: str, value) -> html.Div:
                 },
             ),
         ],
-        style={"marginBottom": "0.75rem"},
+        style={
+            "marginBottom": "0.75rem",
+        },
     )
