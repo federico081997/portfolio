@@ -1,3 +1,4 @@
+from pathlib import Path
 from dash import html, dcc
 import dash_bootstrap_components as dbc
 import pandas as pd
@@ -8,6 +9,9 @@ from visualization import (
     build_cluster_size_histogram,
     build_category_distribution_bar_chart,
     build_publication_trend_line_chart,
+    PAGE_BACKGROUND,
+    PRIMARY,
+    TEXT,
 )
 from components import (
     build_graph_card,
@@ -16,28 +20,18 @@ from components import (
     build_tabs_card,
     build_search_bar,
     build_select,
-    build_top_k_results_card,
-)
-from visualization import (
-    PAGE_BACKGROUND,
-    PRIMARY,
-    SURFACE,
-    BORDER,
-    TEXT,
-    HEADER_BG,
-    MUTED_TEXT,
-    BACKGROUND,
 )
 
-# -------------------------------------------------------------------
-# Load data
-# -------------------------------------------------------------------
-df = pd.read_csv("data/processed/papers_clustered.csv")
-cluster_summary = pd.read_csv("data/processed/cluster_summary.csv")
+# Load preprocessed datasets used across the dashboard.
+project_root = Path(__file__).parent
+cluster_data_path = project_root / "data" / "processed" / "papers_clustered.csv"
+cluster_summary_path = project_root / "data" / "processed" / "cluster_summary.csv"
+df = pd.read_csv(cluster_data_path)
+cluster_summary = pd.read_csv(cluster_summary_path)
 
-# -------------------------------------------------------------------
-# Build figures
-# -------------------------------------------------------------------
+
+# Build static figures
+# These figures are computed once at startup and reused.
 topic_fig = build_topic_scatter_plot(df)
 
 cluster_bar_fig = build_cluster_size_bar_chart(cluster_summary)
@@ -45,20 +39,36 @@ cluster_hist_fig = build_cluster_size_histogram(cluster_summary)
 category_fig = build_category_distribution_bar_chart(df)
 publication_fig = build_publication_trend_line_chart(df)
 
+
+# Default placeholder card shown before any paper is selected.
 default_paper_card = build_default_paper_details_card(
     "Click a paper in the topic map to see its information here."
 )
 
 
 def build_explore_layout():
+    """
+    Build the main "Explore" tab layout.
+
+    The layout includes:
+    - animated statistic cards (top row)
+    - interactive topic map + paper details panel
+    - cluster analysis charts
+    - category and publication trend charts
+
+    Returns:
+        html.Div: Fully composed Dash layout for the Explore view.
+    """
     return html.Div(
         [
+            # Interval component used to animate or update stats dynamically.
             dcc.Interval(
                 id="counter-interval",
                 interval=20,
                 n_intervals=0,
                 max_intervals=100,
             ),
+            # Top statistics cards
             dbc.Row(
                 [
                     dbc.Col(
@@ -91,6 +101,7 @@ def build_explore_layout():
                     ),
                 ],
             ),
+            # Topic map + paper details
             dbc.Row(
                 [
                     dbc.Col(
@@ -108,15 +119,15 @@ def build_explore_layout():
                         className="mb-4",
                     ),
                     dbc.Col(
-                        html.Div(
-                            id="paper-details-container",
-                        ),
+                        # Container dynamically updated when a paper is clicked.
+                        html.Div(id="paper-details-container"),
                         xs=12,
                         lg=4,
                         className="mb-4",
                     ),
                 ],
             ),
+            # Cluster analysis
             dbc.Row(
                 [
                     dbc.Col(
@@ -147,6 +158,7 @@ def build_explore_layout():
                     ),
                 ],
             ),
+            # Category + publication trends
             dbc.Row(
                 [
                     dbc.Col(
@@ -178,11 +190,27 @@ def build_explore_layout():
                 ],
             ),
         ],
-        style={"padding": "16px 16px 24px 16px"},
+        style={
+            "padding": "16px 16px 24px 16px",
+        },
     )
 
 
 def build_search_layout():
+    """
+    Build the layout for the semantic search tab.
+
+    The layout includes:
+    - a search bar
+    - a top-k results selector
+    - a category filter
+    - a results panel
+    - a paper details panel
+
+    Returns:
+        html.Div: Dash layout for the search view.
+    """
+    # Build category dropdown options dynamically from the dataset.
     category_options = [{"label": "All Categories", "value": "ALL"}]
     category_options += [
         {"label": cat, "value": cat}
@@ -191,7 +219,7 @@ def build_search_layout():
 
     return html.Div(
         [
-            # Search controls
+            # Search controls.
             dbc.Row(
                 [
                     dbc.Col(
@@ -233,7 +261,7 @@ def build_search_layout():
                 ],
                 className="g-2",
             ),
-            # Results + Details
+            # Search results and selected paper details.
             dbc.Row(
                 [
                     dbc.Col(
@@ -259,14 +287,29 @@ def build_search_layout():
 
 
 def build_recommendations_layout():
+    """
+    Build the layout for the paper-to-paper recommendation tab.
 
+    The layout includes:
+    - a paper selector
+    - a top-k recommendations selector
+    - a category filter
+    - a recommendations results panel
+    - a recommended paper details panel
+
+    Returns:
+        html.Div: Dash layout for the recommendations view.
+    """
+    # Build category dropdown options dynamically from the dataset.
     category_options = [{"label": "All Categories", "value": "ALL"}]
     category_options += [
         {"label": cat, "value": cat}
         for cat in sorted(df["category"].astype(str).unique())
     ]
+
     return html.Div(
         [
+            # Recommendation controls.
             dbc.Row(
                 [
                     dbc.Col(
@@ -309,6 +352,7 @@ def build_recommendations_layout():
                 ],
                 className="g-2",
             ),
+            # Recommendation results and selected paper details.
             dbc.Row(
                 [
                     dbc.Col(
@@ -331,65 +375,77 @@ def build_recommendations_layout():
 
 def build_main_layout():
     """
-    Main app layout with tabs card.
-    """
+    Build the main application layout.
 
+    This is the top-level page structure and includes:
+    - the dashboard title
+    - a short project description
+    - a visual separator
+    - the main tabbed interface
+
+    Returns:
+        dbc.Container: Full app layout container.
+    """
+    # Define the main application tabs.
     tabs = [
         {"label": "Explore", "value": "explore"},
         {"label": "Search", "value": "search"},
         {"label": "Recommendations", "value": "recommendations"},
     ]
 
-    return (
-        dbc.Container(
-            [
-                # Title
-                html.H2(
-                    "Technical Paper Recommendation System",
-                    className="mt-4 mb-2",
-                    style={
-                        "color": TEXT,
-                        "fontWeight": "600",
-                        "marginBottom": "12px",
-                        "textAlign": "center",
-                    },
-                ),
-                html.P(
-                    "Discover, explore, and analyze research papers through semantic search and interactive topic visualization.",
-                    style={
-                        "color": TEXT,
-                        "fontSize": "0.95rem",
-                        "marginBottom": "20px",
-                        "maxWidth": "600px",
-                        "marginLeft": "auto",
-                        "marginRight": "auto",
-                        "textAlign": "center",
-                    },
-                ),
-                html.Hr(
-                    style={
-                        "borderTop": f"1px solid {PRIMARY}",
-                        "marginTop": "10px",
-                        "marginBottom": "30px",
-                        "width": "60%",
-                        "marginLeft": "auto",
-                        "marginRight": "auto",
-                        "textAlign": "center",
-                    },
-                ),
-                # Tabs inside card
-                build_tabs_card(
-                    tabs=tabs,
-                    card_id="main-tabs",
-                    content_id="main-tab-content",
-                    default_tab="explore",
-                ),
-            ],
-            fluid=True,
-            style={
-                "backgroundColor": PAGE_BACKGROUND,
-                "minHeight": "100vh",
-                "padding": "16px",
-            },
-        ),
+    return dbc.Container(
+        [
+            # Main dashboard title.
+            html.H2(
+                "Technical Paper Recommendation System",
+                className="mt-4 mb-2",
+                style={
+                    "color": TEXT,
+                    "fontWeight": "600",
+                    "marginBottom": "12px",
+                    "textAlign": "center",
+                },
+            ),
+            # Short subtitle describing the dashboard purpose.
+            html.P(
+                """
+                Discover, explore, and analyze research papers using semantic similarity,
+                interactive topic visualization, and a hybrid recommendation system
+                combining embeddings, keywords, and recency.""",
+                style={
+                    "color": TEXT,
+                    "fontSize": "0.95rem",
+                    "marginBottom": "20px",
+                    "maxWidth": "600px",
+                    "marginLeft": "auto",
+                    "marginRight": "auto",
+                    "textAlign": "center",
+                },
+            ),
+            # Decorative divider below the heading.
+            html.Hr(
+                style={
+                    "borderTop": f"1px solid {PRIMARY}",
+                    "marginTop": "10px",
+                    "marginBottom": "30px",
+                    "width": "60%",
+                    "marginLeft": "auto",
+                    "marginRight": "auto",
+                    "textAlign": "center",
+                },
+            ),
+            # Main tabbed content card.
+            build_tabs_card(
+                tabs=tabs,
+                card_id="main-tabs",
+                content_id="main-tab-content",
+                default_tab="explore",
+            ),
+        ],
+        fluid=True,
+        style={
+            "backgroundColor": PAGE_BACKGROUND,
+            "minHeight": "100vh",
+            "padding": "16px",
+        },
     )
