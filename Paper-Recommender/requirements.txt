@@ -1,10 +1,10 @@
 dash==3.3.0
 dash_bootstrap_components==2.0.4
-faiss==1.5.3
+faiss-cpu==1.13.2
 numpy==2.4.3
 pandas==3.0.1
 plotly==6.4.0
-Requests==2.33.0
+Requests==2.32.5
 scikit_learn==1.8.0
 sentence_transformers==5.2.3
 tensorflow==2.20.0
