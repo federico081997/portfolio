@@ -1,7 +1,9 @@
+import logging
 import os
 import warnings
-import logging
+from pathlib import Path
 
+# Suppress verbose TensorFlow backend messages before importing TensorFlow.
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 
@@ -14,41 +16,49 @@ warnings.filterwarnings("ignore", module="tf_keras")
 
 logging.getLogger("tensorflow").setLevel(logging.ERROR)
 
-from dash import Dash, html, Input, Output, State, ctx, no_update, ALL
+from dash import ALL, Dash, Input, Output, State, ctx, html, no_update
 import dash_bootstrap_components as dbc
 import pandas as pd
-import faiss
+import tensorflow as tf
 
-from layout import (
-    build_explore_layout,
-    build_search_layout,
-    build_recommendations_layout,
-    build_main_layout,
-)
 from components import (
     build_default_paper_details_card,
+    build_no_results_card,
     build_paper_details_card,
     build_search_result_button,
-    build_no_results_card,
     build_top_k_results_card,
 )
-from recommender import load_artifacts, get_similar_by_query, get_similar_by_paper
-from visualization import BORDER, MUTED_TEXT, SURFACE, TEXT, HEADER_BG
-
-import tensorflow as tf
+from layout import (
+    build_explore_layout,
+    build_main_layout,
+    build_recommendations_layout,
+    build_search_layout,
+)
+from recommender import get_similar_by_paper, get_similar_by_query, load_artifacts
+from visualization import MUTED_TEXT, TEXT
 
 tf.get_logger().setLevel("ERROR")
 
-# -------------------------------------------------------------------
-# Load data
-# -------------------------------------------------------------------
-_, embeddings, faiss_index = load_artifacts()
-df = pd.read_csv("data/processed/papers_clustered.csv")
-cluster_summary = pd.read_csv("data/processed/cluster_summary.csv")
 
 # -------------------------------------------------------------------
-# App
+# LOAD DATA AND ARTIFACTS
 # -------------------------------------------------------------------
+
+# Load recommendation artifacts used by the search and recommendation callbacks.
+_, embeddings, faiss_index = load_artifacts()
+
+# Load dashboard data files.
+project_root = Path(__file__).parent
+df = pd.read_csv(project_root / "data" / "processed" / "papers_clustered.csv")
+cluster_summary = pd.read_csv(
+    project_root / "data" / "processed" / "cluster_summary.csv"
+)
+
+
+# -------------------------------------------------------------------
+# APP INITIALIZATION
+# -------------------------------------------------------------------
+
 app = Dash(
     __name__,
     external_stylesheets=[dbc.themes.BOOTSTRAP],
@@ -57,8 +67,9 @@ app = Dash(
 
 app.layout = build_main_layout()
 
+
 # -------------------------------------------------------------------
-# Callbacks
+# CALLBACKS
 # -------------------------------------------------------------------
 
 
@@ -67,14 +78,22 @@ app.layout = build_main_layout()
     Input("main-tabs", "active_tab"),
 )
 def render_tab_content(active_tab):
+    """
+    Render the content associated with the selected main tab.
 
+    Args:
+        active_tab: Currently active tab identifier.
+
+    Returns:
+        html.Div: A Dash component containing the selected tab layout.
+    """
     if active_tab == "explore":
         return build_explore_layout()
 
-    elif active_tab == "search":
+    if active_tab == "search":
         return build_search_layout()
 
-    elif active_tab == "recommendations":
+    if active_tab == "recommendations":
         return build_recommendations_layout()
 
     return html.Div("No content available")
@@ -86,13 +105,26 @@ def render_tab_content(active_tab):
     Input("counter-interval", "n_intervals"),
 )
 def animate_counters(n):
+    """
+    Animate the summary counters shown in the Explore tab.
 
+    The animation uses an easing curve to make the counter growth feel smoother.
+
+    Args:
+        n: Current interval tick count.
+
+    Returns:
+        tuple: Animated total paper count and total cluster count.
+    """
     total_papers = len(df)
     total_clusters = df["cluster_id"].nunique()
 
     steps = 100
 
+    # Normalize interval progress to the range [0, 1].
     progress = min(n / steps, 1)
+
+    # Apply easing for a smoother animation.
     progress = 3 * progress**2 - 2 * progress**3
     progress = 1 - (1 - progress) ** 4
 
@@ -106,7 +138,17 @@ def animate_counters(n):
     Output("paper-details-container", "children"),
     Input("topic-map-graph", "clickData"),
 )
-def update_paper_details(clickData):
+def update_topic_map_paper_details(clickData):
+    """
+    Update the paper details panel when a paper is clicked on the topic map.
+
+    Args:
+        clickData: Plotly click payload from the topic map graph.
+
+    Returns:
+        dbc.Card: A paper details card, or the default placeholder card if no valid paper
+        is selected.
+    """
     if not clickData or "points" not in clickData or not clickData["points"]:
         return build_default_paper_details_card(
             "Click a paper in the topic map to see its information here."
@@ -131,15 +173,26 @@ def update_paper_details(clickData):
     prevent_initial_call=True,
 )
 def run_search(n_clicks, query, top_k, category_filter):
+    """
+    Run semantic search from a free-text query and update the results panel.
 
-    # ---- 1. Handle empty query ----
+    Args:
+        n_clicks: Number of times the search button has been clicked.
+        query: User search query.
+        top_k: Number of results requested.
+        category_filter: Optional category filter value.
+
+    Returns:
+        tuple: Search results card and paper details card.
+    """
+    # Ignore empty or whitespace-only queries.
     if not query or not query.strip():
         return no_update, no_update
 
     query = query.strip()
     top_k = int(top_k)
 
-    # ---- 2. Run search ----
+    # Run semantic search.
     results = get_similar_by_query(
         query=query,
         df=df,
@@ -147,28 +200,29 @@ def run_search(n_clicks, query, top_k, category_filter):
         top_k=top_k,
     ).copy()
 
-    # ---- 3. Apply category filter ----
+    # Apply category filtering after retrieval.
     if category_filter and category_filter != "ALL":
         results = results[results["category"] == category_filter].copy()
 
-    # ---- 4. Handle no results ----
+    # Show a no-results card if nothing remains after filtering.
     if results.empty:
         return (
             build_no_results_card(
-                query, "Try a broader query or remove the category filter."
+                query,
+                "Try a broader query or remove the category filter.",
             ),
             no_update,
         )
 
-    # ---- 5. Prepare results ----
+    # Prepare result metadata for display.
     results = results.head(top_k).copy()
     results["rank"] = range(1, len(results) + 1)
     results["paper_id"] = results["paper_index"].astype(str)
 
-    # ---- 6. Build result buttons ----
+    # Build clickable result cards.
     result_cards = [build_search_result_button(row) for _, row in results.iterrows()]
 
-    # ---- 7. Header ----
+    # Create the small header shown above the result list.
     header = [
         html.Span(
             f"Top {len(results)} result/s",
@@ -186,14 +240,12 @@ def run_search(n_clicks, query, top_k, category_filter):
         ),
     ]
 
-    # ---- 8. Use existing card ----
+    # Reuse the existing top-k results container and inject dynamic content.
     results_card = build_top_k_results_card()
-
-    # Inject content
     results_card.children[1].children[0].children = header
     results_card.children[1].children[1].children = result_cards
 
-    # ---- 9. Default details ----
+    # Show the first result in the details panel by default.
     first_paper_id = int(results.iloc[0]["paper_id"])
     details_card = build_paper_details_card(df, first_paper_id)
 
@@ -205,16 +257,20 @@ def run_search(n_clicks, query, top_k, category_filter):
     Input({"type": "search-result-card", "index": ALL}, "n_clicks"),
     prevent_initial_call=True,
 )
-def update_paper_details(n_clicks_list):
+def update_search_paper_details(n_clicks_list):
+    """
+    Update the search details panel when a search result card is clicked.
 
-    # Nothing clicked
+    Args:
+        n_clicks_list: List of click counts for all dynamic result cards.
+
+    Returns:
+        dbc.Card: Updated paper details card, or no_update if nothing triggered.
+    """
     if not ctx.triggered_id:
         return no_update
 
-    # Get clicked paper_id
     paper_id = int(ctx.triggered_id["index"])
-
-    # Build details card
     return build_paper_details_card(df, paper_id)
 
 
@@ -226,15 +282,26 @@ def update_paper_details(n_clicks_list):
     Input("recommend-category-filter", "value"),
 )
 def run_recommendations(selected_paper_id, top_k, category_filter):
-    # ---- 1. Handle no selected paper ----
+    """
+    Run paper-to-paper recommendations and update the recommendation view.
+
+    Args:
+        selected_paper_id: Selected source paper ID from the dropdown.
+        top_k: Number of recommendations requested.
+        category_filter: Optional category filter value.
+
+    Returns:
+        tuple: Recommendation results card and recommended paper details card.
+    """
+    # Do nothing until a source paper is selected.
     if selected_paper_id is None:
         return no_update, no_update
 
-    # Convert dropdown value to integer row position
+    # Convert UI values to expected types.
     paper_idx = int(selected_paper_id)
     top_k = int(top_k)
 
-    # ---- 2. Get recommendations ----
+    # Fetch candidate recommendations.
     results = get_similar_by_paper(
         paper_idx=paper_idx,
         df=df,
@@ -243,31 +310,31 @@ def run_recommendations(selected_paper_id, top_k, category_filter):
         top_k=top_k + 1,
     ).copy()
 
-    # ---- 3. Remove selected paper itself ----
+    # Remove the source paper itself if it appears in the results.
     results = results[results["paper_index"] != paper_idx].copy()
 
-    # ---- 4. Apply category filter ----
+    # Apply category filtering after retrieval.
     if category_filter and category_filter != "ALL":
         results = results[results["category"] == category_filter].copy()
 
-    # ---- 5. Selected paper title ----
     selected_title = df.iloc[paper_idx]["title"]
 
-    # ---- 6. Handle no results ----
+    # Show a no-results card if nothing remains after filtering.
     if results.empty:
         return (
             build_no_results_card(
-                selected_title, "Try another paper or remove the category filter."
+                selected_title,
+                "Try another paper or remove the category filter.",
             ),
             no_update,
         )
 
-    # ---- 7. Keep only top_k ----
+    # Prepare recommendation metadata for display.
     results = results.head(top_k).copy()
     results["rank"] = range(1, len(results) + 1)
     results["paper_id"] = results["paper_index"].astype(int)
 
-    # ---- 8. Build result cards/buttons ----
+    # Build clickable recommendation cards.
     result_cards = [build_search_result_button(row) for _, row in results.iterrows()]
 
     header = [
@@ -287,12 +354,12 @@ def run_recommendations(selected_paper_id, top_k, category_filter):
         ),
     ]
 
-    # ---- 9. Build results card ----
+    # Reuse the existing results card layout and inject recommendation content.
     results_card = build_top_k_results_card()
     results_card.children[1].children[0].children = header
     results_card.children[1].children[1].children = result_cards
 
-    # ---- 10. Default details card = first recommended paper ----
+    # Show the first recommended paper in the details panel by default.
     first_paper_id = int(results.iloc[0]["paper_index"])
     details_card = build_paper_details_card(df, first_paper_id)
 
@@ -305,12 +372,19 @@ def run_recommendations(selected_paper_id, top_k, category_filter):
     prevent_initial_call=True,
 )
 def update_recommended_paper_details(n_clicks_list):
+    """
+    Update the recommendation details panel when a recommendation card is clicked.
 
+    Args:
+        n_clicks_list: List of click counts for all dynamic result cards.
+
+    Returns:
+        dbc.Card: Updated paper details card, or no_update if nothing triggered.
+    """
     if not ctx.triggered_id:
         return no_update
 
     paper_id = int(ctx.triggered_id["index"])
-
     return build_paper_details_card(df, paper_id)
 
 
