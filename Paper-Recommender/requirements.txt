@@ -9,3 +9,4 @@ scikit_learn==1.8.0
 sentence_transformers==5.2.3
 tensorflow==2.20.0
 umap_learn==0.5.9.post2
+gunicorn==22.0.0
