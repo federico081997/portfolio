@@ -1,3 +1,8 @@
+/* --------------------------------
+   BUTTONS
+-------------------------------- */
+
+/* Primary custom button */
 .custom-btn {
     background-color: #3B82F6;
     border: none;
@@ -6,42 +11,59 @@
     transition: all 0.2s ease;
 }
 
-/* 🔵 Hover effect */
+/* Hover effect */
 .custom-btn:hover {
     background-color: #2563EB;
-    /* darker */
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-/* 🔘 Click (pressed) effect */
+/* Click (pressed) effect */
 .custom-btn:active {
     transform: translateY(1px) scale(0.98);
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
 }
 
-/* 🔲 Focus (keyboard navigation) */
+/* Remove focus outline (keyboard navigation) */
 .custom-btn:focus {
     outline: none;
     box-shadow: none;
 }
 
+
+/* --------------------------------
+   CARDS
+-------------------------------- */
+
+/* Subtle lift effect on hover */
 .card-hover:hover {
     transform: translateY(-2px);
     box-shadow: 0 6px 16px rgba(15, 23, 42, 0.10);
 }
 
-/* Remove blue outline from input */
+
+/* --------------------------------
+   INPUTS
+-------------------------------- */
+
+/* Remove default browser focus outline */
 input:focus {
     outline: none !important;
     box-shadow: none !important;
 }
 
+
+/* --------------------------------
+   RESULT BUTTONS
+-------------------------------- */
+
+/* Click effect for result cards */
 .result-btn:active {
     transform: translateY(1px) scale(0.98);
 }
 
-result-btn:focus {
+/* Remove focus outline for result buttons */
+.result-btn:focus {
     outline: none !important;
     box-shadow: none !important;
 }
