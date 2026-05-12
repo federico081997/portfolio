@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>SMS Spam Detector</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+    <main class="container">
+        <section class="card">
+            <h1>SMS Spam Detector</h1>
+
+            <p class="subtitle">
+                Enter an SMS message to classify it as <em>spam</em> or <em>not spam</em>.
+            </p>
+
+            <form method="POST">
+                <label for="message">Message</label>
+
+                <textarea id="message" name="message" rows="7" placeholder="Type your message here..."
+                    required>{{ message }}</textarea>
+
+                <button type="submit">Classify Message</button>
+            </form>
+
+            {% if error %}
+            <div class="error">
+                {{ error }}
+            </div>
+            {% endif %}
+
+            {% if result %}
+            <div class="result {{ result.prediction|lower }}">
+                <h2>Prediction: {{ result.css_class }}</h2>
+
+                <p>
+                    Not spam probability:
+                    <strong>{{ "%.2f"|format(result.not_spam_probability * 100) }}%</strong>
+                </p>
+
+                <p>
+                    Spam probability:
+                    <strong>{{ "%.2f"|format(result.spam_probability * 100) }}%</strong>
+                </p>
+            </div>
+            {% endif %}
+        </section>
+    </main>
+</body>
+
+</html>

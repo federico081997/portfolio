@@ -389,4 +389,4 @@ def update_recommended_paper_details(n_clicks_list):
 
 
 if __name__ == "__main__":
-    app.run()
+    app.run(host="0.0.0.0", port=8050, debug=False)
