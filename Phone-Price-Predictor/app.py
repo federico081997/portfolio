@@ -1,8 +1,8 @@
-from src.data_loader import load_data
-from src.model_utils import load_model_artifacts, add_predictions, get_actual_phone_rows
-from src.ui_components import render_sidebar, render_phone_card, show_error_table
-from src.plots import plot_accuracy_breakdown
-from src.styles import apply_custom_css
+from data_loader import load_data
+from model_utils import load_model_artifacts, add_predictions, get_actual_phone_rows
+from ui_components import render_sidebar, render_phone_card, show_error_table
+from plots import plot_accuracy_breakdown
+from styles import apply_custom_css
 
 import streamlit as st
 
