@@ -2,7 +2,7 @@ import joblib
 import pandas as pd
 import streamlit as st
 
-from src.config import MODEL_PATH, EXPECTED_COLUMNS_PATH
+from config import MODEL_PATH, EXPECTED_COLUMNS_PATH
 
 
 @st.cache_resource

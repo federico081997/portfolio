@@ -1,8 +1,8 @@
 import pandas as pd
 import streamlit as st
 
-from src.config import DEFAULT_BRANDS
-from src.image_scraper import get_phone_image_bytes, image_bytes_to_base64
+from config import DEFAULT_BRANDS
+from image_scraper import get_phone_image_bytes, image_bytes_to_base64
 
 
 def render_sidebar(df):

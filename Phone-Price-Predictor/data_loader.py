@@ -1,7 +1,7 @@
 import pandas as pd
 import streamlit as st
 
-from src.config import DATA_PATH, REQUIRED_COLUMNS
+from config import DATA_PATH, REQUIRED_COLUMNS
 
 
 @st.cache_data
