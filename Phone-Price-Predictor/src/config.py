@@ -1,10 +1,10 @@
 from pathlib import Path
 
-PROJECT_DIR = Path.cwd()
+ROOT_DIR = Path(__file__).resolve().parent
 
-DATA_PATH = PROJECT_DIR / "data" / "cleaned_phone_specs.csv"
-MODEL_PATH = PROJECT_DIR / "models" / "random_forest.joblib"
-EXPECTED_COLUMNS_PATH = PROJECT_DIR / "models" / "expected_columns.joblib"
+DATA_PATH = ROOT_DIR / "data" / "cleaned_phone_specs.csv"
+MODEL_PATH = ROOT_DIR / "models" / "random_forest_v1.joblib"
+EXPECTED_COLUMNS_PATH = ROOT_DIR / "models" / "expected_columns.joblib"
 
 DEFAULT_BRANDS = ["Apple", "Samsung"]
 
