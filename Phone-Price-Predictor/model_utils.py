@@ -134,3 +134,36 @@ def add_predictions(input_df, trained_model, expected_columns):
     output_df["Predicted Price (USD)"] = trained_model.predict(X_predict)
 
     return output_df
+
+
+def predict_custom_phone(selected_custom_payload, trained_model, expected_columns):
+    """
+    Transforms a single custom payload dictionary from the UI sandbox,
+    aligns it with the model's feature schema, and runs inference.
+
+    Parameters
+    ----------
+    selected_custom_payload : dict
+        The raw specifications gathered from the sandbox inputs.
+    trained_model : joblib object
+        The pre-loaded machine learning model.
+    expected_columns : list
+        The feature columns expected by the trained model.
+
+    Returns
+    -------
+    float
+        The isolated predicted price value.
+    """
+    # Convert the dictionary payload into a 1-row DataFrame
+    custom_input_df = pd.DataFrame([selected_custom_payload])
+
+    # Extract features and handle model artifact data alignment
+    X_custom = prepare_features_for_prediction(
+        input_df=custom_input_df, expected_columns=expected_columns
+    )
+
+    # Generate the ML inference array and extract the scalar value
+    predicted_price = float(trained_model.predict(X_custom)[0])
+
+    return predicted_price
