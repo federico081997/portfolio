@@ -10,11 +10,6 @@ def inject_custom_css():
     st.markdown(
         """
     <style>
-        /* Hide default Streamlit branding */
-        #MainMenu {visibility: hidden;}
-        footer {visibility: hidden;}
-        header {visibility: hidden;}
-
         /* Optimize top padding for a cleaner look */
         .block-container {
             padding-top: 2rem;
