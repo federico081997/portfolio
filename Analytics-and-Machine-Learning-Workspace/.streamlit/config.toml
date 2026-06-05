@@ -1,0 +1,15 @@
+[theme]
+# The main accent color for interactive elements (buttons, sliders, active tabs)
+primaryColor = "#4488f6c7"
+
+# The main background of the app (a very subtle cool off-white)
+backgroundColor = "#f8fafc"
+
+# The background of the sidebar and secondary elements (a soft slate blue-gray)
+secondaryBackgroundColor = "#f1f5f9"
+
+# The primary text color (dark slate for high readability, not pure black)
+textColor = "#0f172a"
+
+# Clean, modern font style
+font = "sans serif"
