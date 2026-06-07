@@ -1,17 +1,28 @@
-import streamlit as st
-from components.auth import check_password
+"""Main Streamlit application entry point.
 
-# Import our modular UI components
-from components.sidebar import render_main_navigation
-from components.ingestion_ui import render_data_ingestion_sidebar
+This module configures and launches the Analytics and Machine Learning Workspace. It
+coordinates authentication, initializes global session-state variables, and
+routes the user interface to the appropriate pipeline module based on the
+selected workflow phase.
+
+The application is organized as a modular analytics workspace with separate
+components for data ingestion, ETL and data engineering, exploratory data
+analysis, geospatial visualization, and predictive modeling.
+"""
+
+import streamlit as st
+
+from components.auth import check_password
 from components.cleaning_ui import render_cleaning_module
 from components.eda_ui import render_eda_module
 from components.geospatial_ui import render_geospatial_module
+from components.ingestion_ui import render_data_ingestion_sidebar
 from components.ml_ui import render_ml_module
+from components.dl_ui import render_dl_module
+from components.sidebar import render_main_navigation
 
-# 1. Configure the global page layout
 st.set_page_config(
-    page_title="Predictive Analytics Dashboard",
+    page_title="Analytics and Machine Learning Workspace",
     page_icon="🔍",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -19,61 +30,68 @@ st.set_page_config(
 
 
 def initialize_session_state() -> None:
-    """
-    Initializes global session state variables to persist data across UI reruns.
+    """Initialize global session-state variables used across the application.
 
-    Ensures that the memory dictionary contains the necessary keys for passing
-    data between the completely decoupled modules of the pipeline.
+    Ensures that the main data containers exist before any pipeline module is
+    rendered. These keys allow independent UI modules to share raw and cleaned
+    datasets across Streamlit reruns.
     """
     if "raw_data" not in st.session_state:
         st.session_state["raw_data"] = None
+
     if "cleaned_data" not in st.session_state:
         st.session_state["cleaned_data"] = None
 
 
 def main() -> None:
-    """
-    Main entry point and traffic router for the Streamlit application.
+    """Run the Streamlit application and route users to the active module.
 
-    Delegates the rendering of the primary navigation menu to the sidebar module.
-    Reads the user's selection and dynamically routes traffic, swapping both
-    the sidebar toolsets and the main content area based on the active
-    machine learning pipeline phase.
+    Handles authentication, initializes shared application state, renders the
+    main sidebar navigation, and dispatches the selected workflow phase to the
+    corresponding UI module.
     """
-    # Show login page and check user credentials
     if not check_password():
         st.stop()
 
     initialize_session_state()
 
-    # 1. Retrieve the current phase from the decoupled sidebar navigation module
     active_phase = render_main_navigation()
 
-    # Create a master container that completely resets on every click
     master_container = st.empty()
 
-    # --- DYNAMIC ROUTING LOGIC ---
     with master_container.container():
         if active_phase == "1. Data Ingestion":
-            # Render the separated upload tools in the sidebar
             render_data_ingestion_sidebar()
 
-            # Render the main welcome screen
             st.title("Analytics & Machine Learning Workspace")
             st.markdown("""
-            Welcome to the **Analytics & Machine Learning Workspace**—a fully modular, end-to-end data science platform designed to transform raw tabular data into production-ready predictive models.
+                Welcome to the **Analytics & Machine Learning Workspace** — a
+                modular, end-to-end data science platform for transforming raw
+                tabular data into structured analyses, visual insights, and
+                predictive modeling workflows.
 
-            Engineered with a focus on mathematical rigor, numerical stability, and robust software architecture, this environment provides complete control over the machine learning lifecycle through an interactive, state-managed UI.
+                The platform is designed around a state-managed interface, where
+                each stage of the machine learning lifecycle is handled by a
+                dedicated module.
 
-            ### Platform Architecture
-            Navigate through the sidebar to access the five core analytical engines:
+                ### Platform Architecture
 
-            * **Data Ingestion:** Securely load local data files or stream datasets directly from remote URLs into the session memory.
-            * **ETL & Data Engineering:** A stateful, zero-leakage preprocessing studio for structural formatting, cardinality reduction, and memory footprint optimization.
-            * **Exploratory Data Analysis:** Discover statistical anomalies, multidimensional collinearity, and non-linear relationships through interactive visualizations.
-            * **Geospatial Mapping:** Render heavy spatial datasets safely with DOM-protected WebGL heatmaps, interactive clustering, and dynamic time-lapse animations.
-            * **Predictive Modeling:** Construct mathematically sound Scikit-Learn pipelines featuring algorithmic bias reduction, float-safe skewness transformations, and comprehensive test-set diagnostics.
-            """)
+                Use the sidebar to access the five core analytical modules:
+
+                * **Data Ingestion:** Load local data files or retrieve datasets
+                  from remote URLs into session memory.
+                * **ETL & Data Engineering:** Clean, transform, format, and
+                  prepare datasets for downstream analysis.
+                * **Exploratory Data Analysis:** Investigate distributions,
+                  missing values, statistical patterns, feature relationships,
+                  and potential anomalies.
+                * **Geospatial Mapping:** Visualize spatial data using
+                  interactive maps, clustering, heatmaps, and time-aware
+                  geospatial views.
+                * **Predictive Modeling:** Build Scikit-Learn workflows for
+                  supervised machine learning, model comparison, and diagnostic
+                  evaluation.
+                """)
             st.markdown("---")
 
             if (
@@ -85,22 +103,24 @@ def main() -> None:
                 st.dataframe(st.session_state["raw_data"].head(20), width="stretch")
             else:
                 st.info(
-                    "👈 Please upload a CSV file or provide a URL in the sidebar to initialize the pipeline."
+                    "👈 Please upload a CSV file or provide a URL in the sidebar "
+                    "to initialize the pipeline."
                 )
 
         elif active_phase == "2. ETL & Data Engineering":
-            # Routes to our ETL pipeline module
             render_cleaning_module()
 
         elif active_phase == "3. Exploratory Data Analysis":
-            # Routes to our tabbed Plotly charts module
             render_eda_module()
 
         elif active_phase == "4. Geospatial Mapping":
             render_geospatial_module()
 
-        elif active_phase == "5. Predictive Modeling":
+        elif active_phase == "5. Machine Learning":
             render_ml_module()
+
+        elif active_phase == "6. Deep Learning":
+            render_dl_module()
 
 
 if __name__ == "__main__":

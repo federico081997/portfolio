@@ -1,70 +1,75 @@
+"""Dataset loading utilities for the Streamlit application.
+
+This module provides cached helper functions for loading CSV datasets into
+pandas DataFrames from either a user-uploaded file or a remote URL.
+
+The functions are designed for interactive Streamlit workflows: successful
+loads return populated DataFrames, while invalid inputs or parsing failures are
+reported through the UI and return empty DataFrames to keep the application
+running safely.
+"""
+
+from typing import Any
+
 import pandas as pd
 import streamlit as st
 
 
 @st.cache_data(show_spinner="Loading dataset into memory...")
-def load_data_from_file(uploaded_file) -> pd.DataFrame:
-    """
-    Reads a CSV dataset into a Pandas DataFrame from a Streamlit file buffer.
+def load_data_from_file(uploaded_file: Any) -> pd.DataFrame:
+    """Load a CSV dataset from a Streamlit-uploaded file.
 
-    Utilizes Streamlit's caching mechanism to keep the dataset in memory
-    across UI reruns, preventing redundant I/O operations.
+    Uses Streamlit caching to avoid repeated file parsing across interface
+    reruns when the uploaded file has not changed.
 
     Args:
-        uploaded_file (streamlit.runtime.uploaded_file_manager.UploadedFile):
-            The in-memory file buffer uploaded by the user via the Streamlit interface.
+        uploaded_file: File-like object uploaded through the Streamlit interface.
 
     Returns:
-        pd.DataFrame: A DataFrame containing the loaded data.
-                      Returns an empty DataFrame if the file cannot be parsed.
-
-    Raises:
-        pd.errors.EmptyDataError: If the provided CSV file is entirely empty.
-        pd.errors.ParserError: If the file contains invalid CSV formatting.
-        Exception: Catches generic unexpected errors during the file reading process.
+        A DataFrame containing the loaded CSV data, or an empty DataFrame if
+        the file is empty, malformed, or cannot be loaded.
     """
     try:
         df = pd.read_csv(uploaded_file)
         return df
+
     except pd.errors.EmptyDataError:
-        st.error("The uploaded file is empty. Please upload a valid CSV.")
+        st.error("❌ The uploaded file is empty. Please upload a valid CSV.")
         return pd.DataFrame()
+
     except pd.errors.ParserError:
-        st.error("Failed to parse the file. Ensure it is a properly formatted CSV.")
+        st.error("❌ Failed to parse the file. Ensure it is a properly formatted CSV.")
         return pd.DataFrame()
-    except Exception as e:
-        st.error(f"An unexpected error occurred while loading the file: {e}")
+
+    except Exception as error:
+        st.error(f"❌ An unexpected error occurred while loading the file: {error}")
         return pd.DataFrame()
 
 
 @st.cache_data(show_spinner="Fetching dataset from URL...")
 def load_data_from_url(url: str) -> pd.DataFrame:
-    """
-    Fetches and loads a remote CSV dataset into a Pandas DataFrame via a URL.
+    """Load a remote CSV dataset from a URL.
 
-    Results are cached to optimize performance and prevent repeated network
-    requests when the user interacts with dashboard widgets.
+    Uses Streamlit caching to avoid repeated network requests and CSV parsing
+    when the same URL is reused across interface reruns.
 
     Args:
-        url (str): The direct web link to the target CSV file.
+        url: Direct URL pointing to a CSV file.
 
     Returns:
-        pd.DataFrame: A DataFrame containing the remote data.
-                      Returns an empty DataFrame if the network request or parsing fails.
-
-    Raises:
-        ValueError: If the provided URL is malformed or lacks a valid schema.
-        urllib.error.URLError: If the network request fails (e.g., unreachable host).
-        pd.errors.ParserError: If the remote file is not a valid CSV format.
+        A DataFrame containing the loaded remote CSV data, or an empty DataFrame
+        if the URL is invalid, unreachable, or cannot be parsed as CSV.
     """
     try:
         df = pd.read_csv(url)
         return df
+
     except ValueError:
         st.error(
-            "Invalid URL format. Please ensure the link includes http:// or https://"
+            "❌ Invalid URL format. Please ensure the link includes http:// or https://"
         )
         return pd.DataFrame()
-    except Exception as e:
-        st.error(f"Failed to fetch or parse data from the provided URL: {e}")
+
+    except Exception as error:
+        st.error(f"❌ Failed to fetch or parse data from the provided URL: {error}")
         return pd.DataFrame()

@@ -1,63 +1,90 @@
-import streamlit as st
+"""Streamlit UI for the data cleaning and preprocessing workflow.
+
+This module renders the interactive Data Cleaning & Preprocessing Studio used
+inside the Predictive Analytics Dashboard. It provides sidebar controls for
+structural cleaning, temporal feature engineering, text standardization,
+cardinality reduction, memory optimization, and optional advanced analytical
+transformations.
+
+The module manages cleaned dataset versions through ``st.session_state`` so
+that users can apply transformations sequentially, undo previous operations,
+or reset the dataset to its original uploaded state.
+"""
+
 import pandas as pd
+import streamlit as st
+
 from core.preprocessor import (
-    drop_selected_columns,
-    remove_duplicate_rows,
-    handle_outliers,
-    summarize_outliers,
-    drop_missing_targets,
-    impute_numerical_features,
-    impute_categorical_features,
-    summarize_skewness,
-    fix_numerical_skewness,
-    scale_numerical_features,
-    encode_categorical_features,
     clean_text_features,
-    summarize_cardinality,
-    reduce_cardinality,
-    optimize_memory_usage,
+    drop_missing_targets,
+    drop_selected_columns,
+    encode_categorical_features,
     engineer_temporal_features,
+    fix_numerical_skewness,
+    handle_outliers,
+    impute_categorical_features,
+    impute_numerical_features,
+    optimize_memory_usage,
+    reduce_cardinality,
+    remove_duplicate_rows,
+    scale_numerical_features,
+    summarize_cardinality,
+    summarize_outliers,
+    summarize_skewness,
 )
 
 
 def commit_transformation(new_df: pd.DataFrame) -> None:
-    """
-    Appends a newly transformed DataFrame to the session history stack.
+    """Store a transformed dataset in the session-state history stack.
 
-    This function acts as the state manager for the version control system,
-    allowing the user to sequentially stack transformations and undo them
-    if a mistake is made during the preprocessing phase.
+    Each committed DataFrame becomes the latest version of the cleaned dataset.
+    The history stack allows users to apply preprocessing operations
+    incrementally and undo previous transformations when needed.
 
     Args:
-        new_df (pd.DataFrame): The updated dataset after a cleaning operation.
+        new_df: The transformed dataset produced by a preprocessing operation.
     """
     st.session_state["data_history"].append(new_df)
 
 
 def render_cleaning_module() -> None:
-    """
-    Renders the interactive Data Cleaning and Preprocessing Studio.
-    Structurally separates operations that cause data leakage from those that do not.
+    """Render the data cleaning and preprocessing interface.
+
+    Displays the full ETL workspace, including structural cleaning tools,
+    datetime feature extraction, text cleaning, cardinality reduction, memory
+    optimization, optional analytical transformations, dataset metrics, version
+    controls, and a preview of the current transformed dataset.
     """
     raw_df = st.session_state.get("raw_data")
 
     st.title("Data Cleaning & Preprocessing Studio")
     st.markdown("""
-    Welcome to the **Data Cleaning & Preprocessing Studio**—the foundational stage of the predictive pipeline. This stateful ETL (Extract, Transform, Load) environment is engineered to structure, clean, and optimize raw datasets prior to downstream analysis.
+        Welcome to the **Data Cleaning & Preprocessing Studio** — the
+        foundational stage of the predictive analytics pipeline. This module
+        helps structure, clean, transform, and optimize raw datasets before
+        downstream exploratory analysis or machine learning.
 
-    This framework safely organizes data processing into zero-leakage structural formatting and advanced analytical treatments:
-    * **Structural Architecture:** Drop redundant data, safely remove missing targets, and mathematically parse complex ISO datetime formats into cyclical temporal features.
-    * **Text & Cardinality Optimization:** Standardize string formats, strip hidden characters, and logically group high-cardinality categorical long-tails into manageable segments.
-    * **Memory Optimization:** Automatically downcast mathematical types and categorize strings to drastically reduce RAM consumption and improve pipeline speed.
-    * **Version Control:** Navigate your transformation history safely with a built-in, step-by-step memory stack allowing you to undo structural mistakes in real-time.
-    """)
+        The workflow separates low-risk structural operations from advanced
+        analytical transformations that may introduce data leakage if applied
+        before a supervised machine learning split.
+
+        * **Structural Cleaning:** Remove redundant columns, duplicate rows,
+          and rows with missing values in selected target fields.
+        * **Temporal Engineering:** Parse datetime columns and extract useful
+          calendar-based features.
+        * **Text & Cardinality Optimization:** Standardize text columns and
+          reduce high-cardinality categorical features.
+        * **Memory Optimization:** Downcast numeric data and convert suitable
+          string columns into categorical types.
+        * **Version Control:** Track transformation history and safely undo or
+          reset preprocessing steps.
+        """)
     st.markdown("---")
 
     if raw_df is None or raw_df.empty:
         st.warning("⚠️ No data available. Please upload a dataset first.")
         return
 
-    # 1. State Initialization
     if "data_history" not in st.session_state or not st.session_state["data_history"]:
         st.session_state["data_history"] = [raw_df.copy()]
 
@@ -65,20 +92,19 @@ def render_cleaning_module() -> None:
     st.session_state["cleaned_data"] = current_df
     all_columns = current_df.columns.tolist()
 
-    # --- SIDEBAR: CONTINUOUS ETL PIPELINE ---
-
-    # ==========================================
-    # ZONE 1: SAFE STRUCTURAL CLEANING
-    # ==========================================
+    # -------------------------------------------------------------------------
+    # Sidebar: structural cleaning controls
+    # -------------------------------------------------------------------------
     st.sidebar.markdown("## 🟢 Structural Cleaning")
     st.sidebar.caption(
-        "These operations reorganize data structure and do not cause Data Leakage."
+        "These operations reorganize the dataset structure and do not compute "
+        "statistics from the full feature matrix."
     )
 
-    # 1. Inspect & Handle Missing Data (Dropping Only)
     st.sidebar.markdown("**1. Column & Row Management**")
     st.sidebar.caption(
-        "Review missing data by column, remove columns that are not useful, and clean duplicate rows."
+        "Review missing values, remove unnecessary columns, drop duplicate rows, "
+        "and remove incomplete records for selected fields."
     )
 
     missing_counts = current_df.isnull().sum()
@@ -89,7 +115,8 @@ def render_cleaning_module() -> None:
         }
     )
     missing_data = missing_data[missing_data["Missing Count"] > 0].sort_values(
-        by="Missing %", ascending=False
+        by="Missing %",
+        ascending=False,
     )
 
     if not missing_data.empty:
@@ -99,8 +126,11 @@ def render_cleaning_module() -> None:
         )
 
     cols_to_drop = st.sidebar.multiselect(
-        "Select Columns to Remove:", all_columns, placeholder="Choose columns..."
+        "Select Columns to Remove:",
+        all_columns,
+        placeholder="Choose columns...",
     )
+
     if st.sidebar.button("Remove Selected Columns", type="primary", width="stretch"):
         if cols_to_drop:
             new_state = drop_selected_columns(current_df, cols_to_drop)
@@ -119,6 +149,7 @@ def render_cleaning_module() -> None:
         all_columns,
         placeholder="Choose columns...",
     )
+
     if st.sidebar.button("Drop Incomplete Rows", type="primary", width="stretch"):
         if target_cols:
             new_state = drop_missing_targets(current_df, target_cols)
@@ -129,11 +160,15 @@ def render_cleaning_module() -> None:
 
     st.sidebar.markdown("---")
 
-    # 2. Temporal Engineering
+    # -------------------------------------------------------------------------
+    # Sidebar: temporal feature engineering controls
+    # -------------------------------------------------------------------------
     st.sidebar.markdown("**2. Temporal Engineering**")
     st.sidebar.caption(
-        "Extract useful time features such as month, weekday, year, quarter, hour, and weekend indicators from datetime columns."
+        "Extract time-based features such as year, quarter, month, weekday, "
+        "hour, and weekend indicators from datetime columns."
     )
+
     possible_date_cols = current_df.select_dtypes(
         include=["object", "datetime", "datetime64[ns]"]
     ).columns.tolist()
@@ -142,7 +177,8 @@ def render_cleaning_module() -> None:
         st.sidebar.info("⏳ No text or datetime columns detected.")
     else:
         date_target = st.sidebar.selectbox(
-            "Select Datetime Column:", possible_date_cols
+            "Select Datetime Column:",
+            possible_date_cols,
         )
 
         format_mapping = {
@@ -158,7 +194,8 @@ def render_cleaning_module() -> None:
         }
 
         selected_format_label = st.sidebar.selectbox(
-            "Select Date Format:", list(format_mapping.keys())
+            "Select Date Format:",
+            list(format_mapping.keys()),
         )
         backend_format = format_mapping[selected_format_label]
 
@@ -172,6 +209,7 @@ def render_cleaning_module() -> None:
             "Is Weekend",
             "Is Month Start/End",
         ]
+
         selected_time_features = st.sidebar.multiselect(
             "Select Features to Extract:",
             options=temporal_options,
@@ -181,19 +219,24 @@ def render_cleaning_module() -> None:
 
         apply_cyclical = st.sidebar.checkbox(
             "Apply Cyclical Encoding Using Sine/Cosine",
-            help="Transforms cyclical time (hours/months) into circle coordinates to preserve mathematical continuity.",
+            help=(
+                "Transforms cyclical time variables into sine/cosine coordinates "
+                "to preserve circular continuity."
+            ),
         )
         sort_time = st.sidebar.checkbox(
             "Sort Rows Chronologically",
-            help="Prevents data leakage by ordering data from oldest to newest.",
+            help="Orders the dataset from oldest to newest.",
         )
         set_index = st.sidebar.checkbox(
             "Set Datetime Column as DataFrame Index",
-            help="Required for specific forecasting libraries (e.g., ARIMA).",
+            help="Useful for time-series workflows and forecasting libraries.",
         )
 
         if st.sidebar.button(
-            "Apply Temporal Engineering", type="primary", width="stretch"
+            "Apply Temporal Engineering",
+            type="primary",
+            width="stretch",
         ):
             try:
                 new_state = engineer_temporal_features(
@@ -207,26 +250,34 @@ def render_cleaning_module() -> None:
                 )
                 commit_transformation(new_state)
                 st.rerun()
-            except ValueError as e:
-                st.sidebar.error(str(e))
+            except ValueError as error:
+                st.sidebar.error(str(error))
 
     st.sidebar.markdown("---")
 
-    # 3. Text Standardization
+    # -------------------------------------------------------------------------
+    # Sidebar: text standardization controls
+    # -------------------------------------------------------------------------
     st.sidebar.markdown("**3. Text Standardization**")
     st.sidebar.caption(
-        "Clean and normalize text columns by standardizing casing, spacing, punctuation, and numeric characters."
+        "Normalize text columns by standardizing casing, spacing, punctuation, "
+        "and numeric characters."
     )
+
     cat_cols = current_df.select_dtypes(
         include=["object", "category", "string"]
     ).columns.tolist()
 
     if cat_cols:
         cols_to_clean = st.sidebar.multiselect(
-            "Select Text Columns:", cat_cols, placeholder="Choose columns..."
+            "Select Text Columns:",
+            cat_cols,
+            placeholder="Choose columns...",
         )
+
         case_mode_ui = st.sidebar.selectbox(
-            "Case Conversion:", ["None", "Lowercase", "Uppercase", "Title Case"]
+            "Case Conversion:",
+            ["None", "Lowercase", "Uppercase", "Title Case"],
         )
         case_map = {
             "None": "none",
@@ -242,7 +293,9 @@ def render_cleaning_module() -> None:
         rem_nums = st.sidebar.checkbox("Remove Numbers", value=False)
 
         if st.sidebar.button(
-            "Apply Text Standardization", type="primary", width="stretch"
+            "Apply Text Standardization",
+            type="primary",
+            width="stretch",
         ):
             if cols_to_clean:
                 new_state = clean_text_features(
@@ -263,32 +316,49 @@ def render_cleaning_module() -> None:
 
     st.sidebar.markdown("---")
 
-    # 4. Cardinality Reduction
+    # -------------------------------------------------------------------------
+    # Sidebar: cardinality reduction controls
+    # -------------------------------------------------------------------------
     st.sidebar.markdown("**4. Cardinality Reduction**")
     st.sidebar.caption(
-        "Identify categorical columns with many unique values and group rare categories to simplify analysis."
+        "Inspect categorical features with many unique values and group rare "
+        "categories into broader labels."
     )
+
     if cat_cols:
         card_summary = summarize_cardinality(current_df, cat_cols)
         st.sidebar.dataframe(card_summary, hide_index=True, width="stretch")
 
         card_cols_to_reduce = st.sidebar.multiselect(
-            "Select Columns to Reduce:", cat_cols, placeholder="Choose columns..."
+            "Select Columns to Reduce:",
+            cat_cols,
+            placeholder="Choose columns...",
         )
         card_method_ui = st.sidebar.selectbox(
             "Reduction Strategy:",
-            ["Frequency Threshold", "Keep Top-N Categories", "Substring/Pattern Match"],
+            [
+                "Frequency Threshold",
+                "Keep Top-N Categories",
+                "Substring/Pattern Match",
+            ],
         )
 
-        backend_method, thresh_pct, top_n_val, sub_str = "frequency", 1.0, 10, ""
+        cardinality_method = "frequency"
+        thresh_pct = 1.0
+        top_n_val = 10
+        sub_str = ""
 
         if card_method_ui == "Frequency Threshold":
-            backend_method = "frequency"
+            cardinality_method = "frequency"
             thresh_pct = st.sidebar.slider(
-                "Keep Labels Appearing More Than (%):", 0.1, 5.0, 1.0, 0.1
+                "Keep Labels Appearing More Than (%):",
+                0.1,
+                5.0,
+                1.0,
+                0.1,
             )
         elif card_method_ui == "Keep Top-N Categories":
-            backend_method = "top_n"
+            cardinality_method = "top_n"
             top_n_val = st.sidebar.number_input(
                 "Number of Top Categories to Keep:",
                 min_value=1,
@@ -296,22 +366,24 @@ def render_cleaning_module() -> None:
                 value=10,
             )
         else:
-            backend_method = "substring"
+            cardinality_method = "substring"
             sub_str = st.sidebar.text_input("Match Substring (e.g., 'Apple'):")
 
         other_label = st.sidebar.text_input("Replacement Label", value="Other")
 
         if st.sidebar.button(
-            "Apply Cardinality Reduction", type="primary", width="stretch"
+            "Apply Cardinality Reduction",
+            type="primary",
+            width="stretch",
         ):
             if card_cols_to_reduce:
-                if backend_method == "substring" and not sub_str:
+                if cardinality_method == "substring" and not sub_str:
                     st.sidebar.error("Please enter a substring to match.")
                 else:
                     new_state = reduce_cardinality(
                         current_df,
                         columns=card_cols_to_reduce,
-                        method=backend_method,
+                        method=cardinality_method,
                         threshold_percent=(thresh_pct / 100.0),
                         top_n=top_n_val,
                         substring=sub_str,
@@ -326,12 +398,15 @@ def render_cleaning_module() -> None:
 
     st.sidebar.markdown("---")
 
-    # 5. Memory Optimization
+    # -------------------------------------------------------------------------
+    # Sidebar: memory optimization controls
+    # -------------------------------------------------------------------------
     st.sidebar.markdown("**5. Memory Optimization**")
     st.sidebar.caption(
-        "Reduce the dataset memory footprint by downcasting numeric columns and "
-        "converting suitable text columns to categorical types."
+        "Reduce memory usage by downcasting numeric columns and converting "
+        "suitable text columns to categorical data types."
     )
+
     mem_usage_mb = current_df.memory_usage(deep=True).sum() / 1024**2
 
     if mem_usage_mb > 300:
@@ -341,7 +416,8 @@ def render_cleaning_module() -> None:
 
     opt_ints = st.sidebar.checkbox("Downcast Integers (e.g., int64 → int8)", value=True)
     opt_floats = st.sidebar.checkbox(
-        "Downcast Floats (e.g., float64 → float32)", value=True
+        "Downcast Floats (e.g., float64 → float32)",
+        value=True,
     )
     opt_cats = st.sidebar.checkbox("Convert Strings to Categories", value=True)
 
@@ -357,32 +433,38 @@ def render_cleaning_module() -> None:
 
     st.sidebar.markdown("---")
 
-    # ==========================================
-    # ZONE 2: MATHEMATICAL TRANSFORMATIONS (LEAKAGE RISK)
-    # ==========================================
+    # -------------------------------------------------------------------------
+    # Sidebar: advanced analytical transformations
+    # -------------------------------------------------------------------------
     st.sidebar.markdown("### 🔴 Analytical Transformations")
     st.sidebar.caption(
-        "Toggle to access mathematical imputation, outlier treatment, and scaling."
+        "Unlock mathematical imputation, outlier treatment, distribution "
+        "transformations, scaling, and encoding."
     )
 
     show_advanced = st.sidebar.toggle("Unlock Advanced Analytical Tools", value=False)
 
     if show_advanced:
         st.sidebar.warning(
-            "⚠️ **Leakage Warning:** Do not apply these tools if you plan to use this data directly in a Machine Learning pipeline. "
-            "These mathematical functions compute across the entire dataset. Use these *only* to prep data for Exploratory Data Analysis (EDA) charts."
+            "⚠️ **Leakage Warning:** Do not apply these tools if you plan to use "
+            "this data directly in a machine learning pipeline. These operations "
+            "compute statistics across the full current dataset. Use them only "
+            "when preparing data for exploratory analysis."
         )
 
         num_cols = current_df.select_dtypes(
             include=["float64", "int64", "float32", "int32"]
         ).columns.tolist()
 
-        # 6. Imputation
+        # ---------------------------------------------------------------------
+        # Sidebar: imputation controls
+        # ---------------------------------------------------------------------
         st.sidebar.markdown("**6. Data Imputation**")
         st.sidebar.caption(
-            "Handle missing values by applying appropriate imputation methods for numeric and categorical features."
+            "Fill missing values using numeric and categorical imputation methods."
         )
-        num_missing = [c for c in num_cols if current_df[c].isna().sum() > 0]
+
+        num_missing = [col for col in num_cols if current_df[col].isna().sum() > 0]
         num_impute_cols = st.sidebar.multiselect(
             "Select Numeric Columns:",
             num_cols,
@@ -390,7 +472,8 @@ def render_cleaning_module() -> None:
             default=num_missing,
         )
         num_strategy_ui = st.sidebar.selectbox(
-            "Numeric Strategy:", ["Median", "Mean", "Most Frequent", "Zero"]
+            "Numeric Strategy:",
+            ["Median", "Mean", "Most Frequent", "Zero"],
         )
         num_strategy_map = {
             "Median": "median",
@@ -400,16 +483,20 @@ def render_cleaning_module() -> None:
         }
 
         if st.sidebar.button(
-            "Apply Numeric Imputation", type="primary", width="stretch"
+            "Apply Numeric Imputation",
+            type="primary",
+            width="stretch",
         ):
             if num_impute_cols:
                 new_state = impute_numerical_features(
-                    current_df, num_impute_cols, num_strategy_map[num_strategy_ui]
+                    current_df,
+                    num_impute_cols,
+                    num_strategy_map[num_strategy_ui],
                 )
                 commit_transformation(new_state)
                 st.rerun()
 
-        cat_missing = [c for c in cat_cols if current_df[c].isna().sum() > 0]
+        cat_missing = [col for col in cat_cols if current_df[col].isna().sum() > 0]
         cat_impute_cols = st.sidebar.multiselect(
             "Select Categorical Columns:",
             cat_cols,
@@ -427,22 +514,30 @@ def render_cleaning_module() -> None:
         }
 
         if st.sidebar.button(
-            "Apply Categorical Imputation", type="primary", width="stretch"
+            "Apply Categorical Imputation",
+            type="primary",
+            width="stretch",
         ):
             if cat_impute_cols:
                 new_state = impute_categorical_features(
-                    current_df, cat_impute_cols, cat_strategy_map[cat_strategy_ui]
+                    current_df,
+                    cat_impute_cols,
+                    cat_strategy_map[cat_strategy_ui],
                 )
                 commit_transformation(new_state)
                 st.rerun()
 
         st.sidebar.markdown("---")
 
-        # 7. Outlier Detection & Treatment
+        # ---------------------------------------------------------------------
+        # Sidebar: outlier treatment controls
+        # ---------------------------------------------------------------------
         st.sidebar.markdown("**7. Outlier Treatment**")
         st.sidebar.caption(
-            "Identify potential outliers in numeric columns and treat them by clipping, removing, or replacing extreme values."
+            "Detect potential outliers in numeric columns and treat them by "
+            "clipping, null replacement, or row removal."
         )
+
         if num_cols:
             outlier_cols = st.sidebar.multiselect(
                 "Select Numeric Columns for Outliers:",
@@ -451,18 +546,29 @@ def render_cleaning_module() -> None:
                 default=[num_cols[0]] if num_cols else None,
             )
             outlier_method_ui = st.sidebar.selectbox(
-                "Outlier Detection Method:", ["IQR", "Z-Score", "Percentiles"]
+                "Outlier Detection Method:",
+                ["IQR", "Z-Score", "Percentiles"],
             )
 
-            iqr_mult, z_thresh, pct_range = 1.5, 3.0, (0.01, 0.99)
-            if "IQR" in outlier_method_ui:
-                backend_method = "iqr"
+            outlier_method = "iqr"
+            iqr_mult = 1.5
+            z_thresh = 3.0
+            pct_range = (0.01, 0.99)
+
+            if outlier_method_ui == "IQR":
+                outlier_method = "iqr"
                 iqr_mult = st.sidebar.slider("IQR Multiplier:", 1.0, 5.0, 1.5, 0.1)
-            elif "Z-Score" in outlier_method_ui:
-                backend_method = "zscore"
-                z_thresh = st.sidebar.slider("Z-Score Threshold:", 2.0, 5.0, 3.0, 0.1)
+            elif outlier_method_ui == "Z-Score":
+                outlier_method = "zscore"
+                z_thresh = st.sidebar.slider(
+                    "Z-Score Threshold:",
+                    2.0,
+                    5.0,
+                    3.0,
+                    0.1,
+                )
             else:
-                backend_method = "percentile"
+                outlier_method = "percentile"
                 col1, col2 = st.sidebar.columns(2)
                 lower_pct = col1.number_input("Lower %", 0.0, 10.0, 1.0, 0.1)
                 upper_pct = col2.number_input("Upper %", 90.0, 100.0, 99.0, 0.1)
@@ -472,7 +578,7 @@ def render_cleaning_module() -> None:
                 summary_df = summarize_outliers(
                     current_df,
                     outlier_cols,
-                    backend_method,
+                    outlier_method,
                     iqr_mult,
                     z_thresh,
                     pct_range,
@@ -494,13 +600,15 @@ def render_cleaning_module() -> None:
             }
 
             if st.sidebar.button(
-                "Apply Outlier Treatment", type="primary", width="stretch"
+                "Apply Outlier Treatment",
+                type="primary",
+                width="stretch",
             ):
                 if outlier_cols:
                     new_state = handle_outliers(
                         current_df,
                         columns=outlier_cols,
-                        method=backend_method,
+                        method=outlier_method,
                         action=action_map[outlier_action_ui],
                         iqr_multiplier=iqr_mult,
                         zscore_threshold=z_thresh,
@@ -511,22 +619,29 @@ def render_cleaning_module() -> None:
 
         st.sidebar.markdown("---")
 
-        # 8. Skewness Analysis & Transformation
+        # ---------------------------------------------------------------------
+        # Sidebar: skewness transformation controls
+        # ---------------------------------------------------------------------
         st.sidebar.markdown("**8. Skewness Transformation**")
         st.sidebar.caption(
-            "Analyze skewness in numeric features and apply distribution transformations to reduce asymmetry."
+            "Analyze skewness in numeric features and apply transformations to "
+            "reduce distribution asymmetry."
         )
+
         if num_cols:
             skew_summary = summarize_skewness(current_df, num_cols)
+
             if not skew_summary.empty:
                 st.sidebar.dataframe(
                     skew_summary.style.format({"Skewness": "{:.2f}"}),
                     hide_index=True,
                     width="stretch",
                 )
+
                 highly_skewed_cols = skew_summary[
                     skew_summary["Diagnosis"] == "Highly Skewed"
                 ]["Feature"].tolist()
+
                 skew_cols = st.sidebar.multiselect(
                     "Select Columns to Transform:",
                     num_cols,
@@ -553,24 +668,32 @@ def render_cleaning_module() -> None:
                     if skew_cols:
                         try:
                             new_state = fix_numerical_skewness(
-                                current_df, skew_cols, skew_method_map[skew_method_ui]
+                                current_df,
+                                skew_cols,
+                                skew_method_map[skew_method_ui],
                             )
                             commit_transformation(new_state)
                             st.rerun()
-                        except ValueError as e:
-                            st.sidebar.error(str(e))
+                        except ValueError as error:
+                            st.sidebar.error(str(error))
 
         st.sidebar.markdown("---")
 
-        # 9. Scaling & Encoding
+        # ---------------------------------------------------------------------
+        # Sidebar: scaling and encoding controls
+        # ---------------------------------------------------------------------
         st.sidebar.markdown("**9. Scaling & Encoding**")
         st.sidebar.caption("Scale numeric features and encode categorical variables.")
+
         if num_cols:
             scale_cols = st.sidebar.multiselect(
-                "Select Columns to Scale:", num_cols, placeholder="Choose columns..."
+                "Select Columns to Scale:",
+                num_cols,
+                placeholder="Choose columns...",
             )
             scale_method_ui = st.sidebar.selectbox(
-                "Scaling Method:", ["Standard", "Min-Max", "Robust", "MaxAbs"]
+                "Scaling Method:",
+                ["Standard", "Min-Max", "Robust", "MaxAbs"],
             )
             scale_map = {
                 "Standard": "standard",
@@ -580,7 +703,9 @@ def render_cleaning_module() -> None:
             }
 
             if st.sidebar.button(
-                "Scale Selected Features", type="primary", width="stretch"
+                "Scale Selected Features",
+                type="primary",
+                width="stretch",
             ):
                 if scale_cols:
                     new_state = scale_numerical_features(
@@ -593,15 +718,23 @@ def render_cleaning_module() -> None:
 
         if cat_cols:
             encode_cols = st.sidebar.multiselect(
-                "Select Columns to Encode:", cat_cols, placeholder="Choose columns..."
+                "Select Columns to Encode:",
+                cat_cols,
+                placeholder="Choose columns...",
             )
             encode_method_ui = st.sidebar.selectbox(
-                "Encoding Method:", ["One-Hot Encoding", "Label Encoding"]
+                "Encoding Method:",
+                ["One-Hot Encoding", "Label Encoding"],
             )
-            encode_map = {"One-Hot Encoding": "onehot", "Label Encoding": "label"}
+            encode_map = {
+                "One-Hot Encoding": "onehot",
+                "Label Encoding": "label",
+            }
 
             if st.sidebar.button(
-                "Encode Selected Features", type="primary", width="stretch"
+                "Encode Selected Features",
+                type="primary",
+                width="stretch",
             ):
                 if encode_cols:
                     new_state = encode_categorical_features(
@@ -612,12 +745,18 @@ def render_cleaning_module() -> None:
                     commit_transformation(new_state)
                     st.rerun()
 
+        else:
+            st.sidebar.success(
+                "✅ All categorical features have been successfully encoded into numerical formats."
+            )
+
         st.sidebar.markdown("---")
 
-    # ==========================================
-    # MAIN VIEW: DASHBOARD AND DATA PREVIEW
-    # ==========================================
+    # -------------------------------------------------------------------------
+    # Main page: dataset summary, version controls, and preview
+    # -------------------------------------------------------------------------
     col1, col2, col3 = st.columns(3)
+
     col1.metric("Total Rows", f"{current_df.shape[0]:,}")
     col2.metric("Total Columns", f"{current_df.shape[1]:,}")
     col3.metric("Missing Values", f"{current_df.isna().sum().sum():,}")
@@ -625,10 +764,11 @@ def render_cleaning_module() -> None:
     st.markdown("---")
 
     st.subheader("Data Version Control")
-    col_undo, col_reset, col_empty = st.columns([1, 1, 2])
+    col_undo, col_reset, _ = st.columns([1, 1, 2])
 
     with col_undo:
         history_length = len(st.session_state["data_history"])
+
         if st.button(
             f"↩️ Undo Action ({history_length - 1} steps)",
             disabled=(history_length <= 1),

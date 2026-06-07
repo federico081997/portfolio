@@ -1,15 +1,23 @@
+# Streamlit theme configuration.
+#
+# This file defines the global visual style for the application, including the
+# primary accent color, page background, sidebar background, text color, and
+# default font family.
+
 [theme]
-# The main accent color for interactive elements (buttons, sliders, active tabs)
-primaryColor = "#4488f6c7"
 
-# The main background of the app (a very subtle cool off-white)
-backgroundColor = "#f8fafc"
+# Accent color used for interactive elements such as buttons, sliders,
+# active tabs, and selected controls.
+primaryColor = "#4488F6"
 
-# The background of the sidebar and secondary elements (a soft slate blue-gray)
-secondaryBackgroundColor = "#f1f5f9"
+# Main application background color.
+backgroundColor = "#F8FAFC"
 
-# The primary text color (dark slate for high readability, not pure black)
-textColor = "#0f172a"
+# Sidebar and secondary container background color.
+secondaryBackgroundColor = "#F1F5F9"
 
-# Clean, modern font style
+# Primary text color.
+textColor = "#0F172A"
+
+# Default application font.
 font = "sans serif"

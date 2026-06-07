@@ -1,14 +1,24 @@
+"""Sidebar navigation components for the Streamlit application.
+
+This module contains the primary navigation control used by the Predictive
+Analytics Dashboard. The selected sidebar option determines which pipeline
+module is rendered in the main application area.
+"""
+
 import streamlit as st
 
 
 def render_main_navigation() -> str:
-    """
-    Renders the primary navigation menu in the Streamlit sidebar.
+    """Render the main sidebar navigation menu.
+
+    Displays the available workflow phases and returns the currently selected
+    phase so the main application can route the user to the corresponding
+    module.
 
     Returns:
-        str: The string value of the currently selected pipeline phase.
+        The selected pipeline phase.
     """
-    st.sidebar.title("Pipeline Navigation")
+    st.sidebar.title("Navigation")
 
     active_phase = st.sidebar.radio(
         "Select Phase:",
@@ -17,7 +27,8 @@ def render_main_navigation() -> str:
             "2. ETL & Data Engineering",
             "3. Exploratory Data Analysis",
             "4. Geospatial Mapping",
-            "5. Predictive Modeling",
+            "5. Machine Learning",
+            "6. Deep Learning",
         ],
     )
 

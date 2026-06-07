@@ -1,63 +1,78 @@
-import pandas as pd
+"""Data preprocessing utilities for the analytics pipeline.
+
+This module contains pure data transformation functions used by the Streamlit
+cleaning interface. The functions operate on pandas DataFrames and return
+transformed copies, preserving the original input data unless explicitly handled
+by the caller.
+
+The module covers structural cleaning, temporal feature engineering, text
+standardization, cardinality reduction, memory optimization, missing-value
+imputation, outlier treatment, skewness correction, numerical scaling, and
+categorical encoding.
+"""
+
 import numpy as np
+import pandas as pd
 from scipy.stats import boxcox, yeojohnson
 from sklearn.preprocessing import (
-    StandardScaler,
+    MaxAbsScaler,
     MinMaxScaler,
     RobustScaler,
-    MaxAbsScaler,
+    StandardScaler,
 )
 
-# ==========================================
-#           COLUMN & ROW MANAGEMENT
-# ==========================================
+# =============================================================================
+# Column and row management
+# =============================================================================
 
 
 def drop_selected_columns(df: pd.DataFrame, columns_to_drop: list) -> pd.DataFrame:
-    """
-    Removes specified columns from the DataFrame safely.
+    """Remove selected columns from a DataFrame.
+
+    Missing column names are ignored, allowing the function to be used safely
+    when user-selected columns may no longer exist after previous transformations.
 
     Args:
-        df (pd.DataFrame): The input DataFrame.
-        columns_to_drop (list): A list of column name strings to be removed.
+        df: Input DataFrame.
+        columns_to_drop: Column names to remove.
 
     Returns:
-        pd.DataFrame: A new DataFrame with the specified columns dropped.
-                      Ignores errors if a column does not exist.
+        A new DataFrame with the selected columns removed.
     """
-    return df.drop(columns=columns_to_drop, errors="ignore")
+    return df.drop(columns=columns_to_drop, errors="ignore").reset_index(drop=True)
 
 
 def remove_duplicate_rows(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Identifies and removes exact duplicate rows across all columns.
+    """Remove exact duplicate rows from a DataFrame.
 
     Args:
-        df (pd.DataFrame): The input DataFrame.
+        df: Input DataFrame.
 
     Returns:
-        pd.DataFrame: A new DataFrame containing only unique rows.
+        A new DataFrame containing only unique rows with a reset integer index.
     """
     return df.drop_duplicates().reset_index(drop=True)
 
 
 def drop_missing_targets(df: pd.DataFrame, target_columns: list) -> pd.DataFrame:
-    """
-    Drops rows where critical target variables or geospatial coordinates are missing.
+    """Remove rows with missing values in selected columns.
+
+    This is typically used for target variables, required fields, or critical
+    columns such as geospatial coordinates.
 
     Args:
-        df (pd.DataFrame): The input DataFrame.
-        target_columns (list): A list of column names that must not contain missing values.
+        df: Input DataFrame.
+        target_columns: Column names that must not contain missing values.
 
     Returns:
-        pd.DataFrame: A new DataFrame with rows containing NaNs in the target columns removed.
+        A new DataFrame with incomplete rows removed and the index reset.
     """
     return df.dropna(subset=target_columns).reset_index(drop=True)
 
 
-# ==========================================
-#           TEMPORAL ENGINEERING
-# ==========================================
+# =============================================================================
+# Temporal engineering
+# =============================================================================
 
 
 def engineer_temporal_features(
@@ -69,100 +84,113 @@ def engineer_temporal_features(
     sort_chronological: bool = False,
     set_as_index: bool = False,
 ) -> pd.DataFrame:
-    """
-    Parses datetime strings, extracts granular temporal features, and structures
-    the DataFrame for time-series forecasting.
+    """Parse a datetime column and engineer temporal features.
+
+    Converts the selected column to pandas datetime format, extracts requested
+    calendar-based features, optionally creates cyclical sine/cosine encodings,
+    and optionally sorts or indexes the DataFrame chronologically.
 
     Args:
-        df (pd.DataFrame): The input DataFrame.
-        date_column (str): The column containing datetime information.
-        features_to_extract (list): List of temporal features to create
-            (e.g., ['Month', 'Hour']).
-        datetime_format (str, optional): The exact string format to parse dates
-            efficiently (e.g., '%Y-%m-%d', 'ISO8601', or 'mixed'). Defaults to 'mixed'.
-        apply_cyclical (bool, optional): Whether to generate Sin/Cos cyclical
-            features to preserve continuous mathematical time. Defaults to False.
-        sort_chronological (bool, optional): Sorts the DataFrame chronologically
-            to prevent data leakage in time-series splits. Defaults to False.
-        set_as_index (bool, optional): Sets the datetime column as the DataFrame
-            index, required for some forecasting models. Defaults to False.
+        df: Input DataFrame.
+        date_column: Name of the column containing datetime values.
+        features_to_extract: Temporal features to create, such as ``"Month"``,
+            ``"Hour"``, or ``"Day of Week"``.
+        datetime_format: Datetime parsing format. Supported values include
+            ``"mixed"``, ``"ISO8601"``, or a valid pandas datetime format string.
+        apply_cyclical: Whether to add sine/cosine encodings for cyclical
+            temporal variables.
+        sort_chronological: Whether to sort rows by the parsed datetime column.
+        set_as_index: Whether to set the datetime column as the DataFrame index.
 
     Returns:
-        pd.DataFrame: A structurally updated DataFrame with new temporal features.
+        A new DataFrame with the selected temporal features added.
+
+    Raises:
+        ValueError: If the selected datetime column cannot be parsed into any
+            valid datetime values.
     """
     df_clean = df.copy()
 
     if date_column in df_clean.columns:
-        # Count valid data BEFORE conversion
         initial_valid_count = df_clean[date_column].notna().sum()
 
-        # 1. Parse the strings into pandas datetime objects
         if datetime_format == "mixed":
-            # Fallback to guessing if the user explicitly wants auto-detect
             df_clean[date_column] = pd.to_datetime(
-                df_clean[date_column], format="mixed", errors="coerce"
+                df_clean[date_column],
+                format="mixed",
+                errors="coerce",
             )
         elif datetime_format == "ISO8601":
-            # Pandas built-in ISO parser
             df_clean[date_column] = pd.to_datetime(
-                df_clean[date_column], format="ISO8601", errors="coerce"
+                df_clean[date_column],
+                format="ISO8601",
+                errors="coerce",
             )
         else:
-            # Strict, high-speed parsing using the provided format string
             df_clean[date_column] = pd.to_datetime(
-                df_clean[date_column], format=datetime_format, errors="coerce"
+                df_clean[date_column],
+                format=datetime_format,
+                errors="coerce",
             )
 
-        # Count valid data AFTER conversion
         final_valid_count = df_clean[date_column].notna().sum()
 
-        # If we started with data but ended with 0 valid dates, the format is entirely wrong
-        # or the column cannot be coverted to datetime
         if initial_valid_count > 0 and final_valid_count == 0:
             if datetime_format == "mixed":
-                # If Auto-Detect failed to find a single date, it's almost certainly the wrong column
                 raise ValueError(
-                    f"Validation failed: Could not detect any valid dates in '{date_column}'. "
-                    "Please ensure you selected a column that actually contains datetime information."
+                    f"Validation failed: Could not detect any valid dates in "
+                    f"'{date_column}'. Please ensure you selected a column that "
+                    "actually contains datetime information."
                 )
-            else:
-                # If a specific format failed, it could be the column OR the format
-                raise ValueError(
-                    f"Validation failed: The format '{datetime_format}' destroyed all data in '{date_column}'. "
-                    "Ensure you selected a valid datetime column AND the correct format, or try 'Auto Detect'."
-                )
+
+            raise ValueError(
+                f"Validation failed: The format '{datetime_format}' destroyed "
+                f"all data in '{date_column}'. Ensure you selected a valid "
+                "datetime column and the correct format, or try 'Auto Detect'."
+            )
 
         dt_col = df_clean[date_column].dt
 
-        # 2. Standard & Business Feature Extraction
         if "Year" in features_to_extract:
             df_clean["Year"] = dt_col.year
+
         if "Quarter" in features_to_extract:
             df_clean["Quarter"] = dt_col.quarter
+
         if "Month" in features_to_extract:
             df_clean["Month"] = dt_col.month
+
         if "Day" in features_to_extract:
             df_clean["Day"] = dt_col.day
+
         if "Hour" in features_to_extract:
             df_clean["Hour"] = dt_col.hour
+
         if "Day of Week" in features_to_extract:
             df_clean["Day_of_Week"] = dt_col.dayofweek
 
-        # Boolean Flags (Converted to 1/0 for ML)
         if "Is Weekend" in features_to_extract:
             df_clean["Is_Weekend"] = (dt_col.dayofweek >= 5).astype(int)
+
         if "Is Month Start/End" in features_to_extract:
             df_clean["Is_Month_Start"] = dt_col.is_month_start.astype(int)
             df_clean["Is_Month_End"] = dt_col.is_month_end.astype(int)
 
-        # 3. Cyclical Mathematical Encoding
         if apply_cyclical:
+            valid_cyclical_features = {"Month", "Hour", "Day of Week"}
+            if not valid_cyclical_features.intersection(features_to_extract):
+                raise ValueError(
+                    "To apply cyclical encoding, you must extract at least one cyclical feature: 'Month', 'Hour', or 'Day of Week'."
+                )
+
             if "Month" in features_to_extract:
                 df_clean["Month_Sin"] = np.sin(2 * np.pi * df_clean["Month"] / 12)
                 df_clean["Month_Cos"] = np.cos(2 * np.pi * df_clean["Month"] / 12)
+
             if "Hour" in features_to_extract:
                 df_clean["Hour_Sin"] = np.sin(2 * np.pi * df_clean["Hour"] / 24)
                 df_clean["Hour_Cos"] = np.cos(2 * np.pi * df_clean["Hour"] / 24)
+
             if "Day of Week" in features_to_extract:
                 df_clean["DayOfWeek_Sin"] = np.sin(
                     2 * np.pi * df_clean["Day_of_Week"] / 7
@@ -171,20 +199,18 @@ def engineer_temporal_features(
                     2 * np.pi * df_clean["Day_of_Week"] / 7
                 )
 
-        # 4. Time-Series Structural Prep
         if sort_chronological:
             df_clean = df_clean.sort_values(by=date_column).reset_index(drop=True)
 
         if set_as_index:
-            # drop=False keeps the column in the dataframe for feature extraction later
             df_clean = df_clean.set_index(date_column, drop=False)
 
     return df_clean
 
 
-# ==========================================
-#           TEXT STANDARDIZATION
-# ==========================================
+# =============================================================================
+# Text standardization
+# =============================================================================
 
 
 def clean_text_features(
@@ -196,23 +222,23 @@ def clean_text_features(
     strip_whitespace: bool = True,
     collapse_spaces: bool = True,
 ) -> pd.DataFrame:
-    """
-    Applies modular string transformations to standardize text data.
+    """Standardize selected text columns.
 
-    Operates using vectorized pandas string methods for high performance.
-    Safely ignores null values to prevent converting NaNs into the string "nan".
+    Applies vectorized pandas string operations while preserving missing values
+    as missing values instead of converting them to the string ``"nan"``.
 
     Args:
-        df (pd.DataFrame): The input DataFrame.
-        columns (list): List of text column names to process.
-        case_mode (str): 'lower', 'upper', 'title', or 'none'. Defaults to 'lower'.
-        remove_punctuation (bool): Strips all non-alphanumeric characters (excluding spaces).
-        remove_numbers (bool): Strips all digits 0-9.
-        strip_whitespace (bool): Removes leading and trailing spaces.
-        collapse_spaces (bool): Converts multiple consecutive spaces into a single space.
+        df: Input DataFrame.
+        columns: Text column names to clean.
+        case_mode: Case transformation mode. Supported values are ``"lower"``,
+            ``"upper"``, ``"title"``, and ``"none"``.
+        remove_punctuation: Whether to remove punctuation characters.
+        remove_numbers: Whether to remove numeric characters.
+        strip_whitespace: Whether to remove leading and trailing whitespace.
+        collapse_spaces: Whether to replace repeated whitespace with one space.
 
     Returns:
-        pd.DataFrame: DataFrame with standardized text columns.
+        A new DataFrame with standardized text columns.
     """
     df_clean = df.copy()
 
@@ -222,60 +248,69 @@ def clean_text_features(
         ):
             continue
 
-        # Isolate non-nulls using a boolean mask to prevent converting NaN to "nan"
         not_null_mask = df_clean[col].notna()
+
         if not not_null_mask.any():
             continue
 
-        # Force valid rows to string for vectorized operations
-        s = df_clean.loc[not_null_mask, col].astype(str)
+        series = df_clean.loc[not_null_mask, col].astype(str)
 
-        # 1. Case Normalization
         if case_mode == "lower":
-            s = s.str.lower()
+            series = series.str.lower()
         elif case_mode == "upper":
-            s = s.str.upper()
+            series = series.str.upper()
         elif case_mode == "title":
-            s = s.str.title()
+            series = series.str.title()
 
-        # 2. Filtering (Regex)
         if remove_punctuation:
-            # Replaces anything that is NOT a word character (\w) or whitespace (\s)
-            s = s.str.replace(r"[^\w\s]", "", regex=True)
+            series = series.str.replace(r"[^\w\s]", "", regex=True)
 
         if remove_numbers:
-            # Replaces any digit
-            s = s.str.replace(r"\d+", "", regex=True)
+            series = series.str.replace(r"\d+", "", regex=True)
 
-        # 3. Whitespace Management
         if collapse_spaces:
-            # Replaces 2 or more spaces with a single space
-            s = s.str.replace(r"\s{2,}", " ", regex=True)
+            series = series.str.replace(r"\s{2,}", " ", regex=True)
 
         if strip_whitespace:
-            s = s.str.strip()
+            series = series.str.strip()
 
-        # Reassign the cleaned series back to the original DataFrame
-        df_clean.loc[not_null_mask, col] = s
+        df_clean.loc[not_null_mask, col] = series
 
     return df_clean
 
 
-# ==========================================
-#           CARDINALITY REDUCTION
-# ==========================================
+# =============================================================================
+# Cardinality reduction
+# =============================================================================
 
 
 def summarize_cardinality(df: pd.DataFrame, columns: list) -> pd.DataFrame:
-    """
-    Calculates the number of unique categories for specified text/categorical columns.
+    """Summarize the number of unique categories in selected columns.
+
+    Args:
+        df: Input DataFrame.
+        columns: Column names to analyze.
+
+    Returns:
+        A summary DataFrame containing each feature name and its number of
+        unique categories, sorted from highest to lowest cardinality.
     """
     summary = []
+
     for col in columns:
         if col in df.columns:
             unique_count = df[col].nunique()
-            summary.append({"Feature": col, "Unique Categories": unique_count})
-    return pd.DataFrame(summary).sort_values(by="Unique Categories", ascending=False)
+            summary.append(
+                {
+                    "Feature": col,
+                    "Unique Categories": unique_count,
+                }
+            )
+
+    return pd.DataFrame(summary).sort_values(
+        by="Unique Categories",
+        ascending=False,
+    )
 
 
 def reduce_cardinality(
@@ -287,20 +322,25 @@ def reduce_cardinality(
     substring: str = "",
     replacement_label: str = "Other",
 ) -> pd.DataFrame:
-    """
-    Consolidates high-cardinality categorical features using multiple strategies.
+    """Group categories in high-cardinality columns.
+
+    Supports frequency-based grouping, top-N category retention, and
+    case-insensitive substring matching.
 
     Args:
-        df (pd.DataFrame): The input DataFrame.
-        columns (list): Columns to reduce.
-        method (str): Reduction strategy ('frequency', 'top_n', or 'substring').
-        threshold_percent (float): Minimum frequency percentage (for 'frequency').
-        top_n (int): Number of top categories to keep (for 'top_n').
-        substring (str): The text pattern to match and group (for 'substring').
-        replacement_label (str): The string to replace grouped labels with.
+        df: Input DataFrame.
+        columns: Categorical column names to reduce.
+        method: Reduction method. Supported values are ``"frequency"``,
+            ``"top_n"``, and ``"substring"``.
+        threshold_percent: Minimum relative frequency required to keep a label
+            when using frequency-based reduction.
+        top_n: Number of most frequent categories to keep when using top-N
+            reduction.
+        substring: Text pattern to match when using substring-based grouping.
+        replacement_label: Replacement label assigned to grouped categories.
 
     Returns:
-        pd.DataFrame: Transformed DataFrame.
+        A new DataFrame with reduced-cardinality categorical columns.
     """
     df_clean = df.copy()
 
@@ -308,8 +348,8 @@ def reduce_cardinality(
         if col not in df_clean.columns:
             continue
 
-        # Create mask to ignore nulls (we don't want to group NaNs into "Other")
         not_null_mask = df_clean[col].notna()
+
         if not not_null_mask.any():
             continue
 
@@ -322,13 +362,11 @@ def reduce_cardinality(
             top_labels = (
                 df_clean.loc[not_null_mask, col].value_counts().nlargest(top_n).index
             )
-            # Replace anything NOT in the top labels (and not null) with the replacement
             replace_mask = not_null_mask & ~df_clean[col].isin(top_labels)
             df_clean.loc[replace_mask, col] = replacement_label
 
         elif method == "substring":
             if substring:
-                # Case-insensitive substring match
                 contains_mask = (
                     df_clean[col]
                     .astype(str)
@@ -339,9 +377,9 @@ def reduce_cardinality(
     return df_clean
 
 
-# ==========================================
-#           MEMORY OPTIMIZATION
-# ==========================================
+# =============================================================================
+# Memory optimization
+# =============================================================================
 
 
 def optimize_memory_usage(
@@ -350,29 +388,31 @@ def optimize_memory_usage(
     downcast_floats: bool = True,
     categorize_strings: bool = True,
 ) -> pd.DataFrame:
-    """
-    Reduces the memory footprint of a DataFrame by downcasting numeric types
-    and converting low-cardinality string columns to categoricals.
+    """Reduce DataFrame memory usage where safe.
+
+    Downcasts integer and floating-point columns to smaller numeric types when
+    their value ranges allow it. Optionally converts object columns to pandas
+    categorical dtype when the unique-value ratio is below 50%.
 
     Args:
-        df (pd.DataFrame): The input DataFrame.
-        downcast_integers (bool): Whether to downcast int64 to int32, int16, or int8.
-        downcast_floats (bool): Whether to downcast float64 to float32.
-        categorize_strings (bool): Whether to convert object types to categories.
+        df: Input DataFrame.
+        downcast_integers: Whether to downcast integer columns.
+        downcast_floats: Whether to downcast floating-point columns.
+        categorize_strings: Whether to convert suitable object columns to
+            categorical dtype.
 
     Returns:
-        pd.DataFrame: Memory-optimized DataFrame.
+        A memory-optimized copy of the input DataFrame.
     """
     df_clean = df.copy()
 
     for col in df_clean.columns:
         col_type = df_clean[col].dtype
 
-        # 1. Optimize Integers
         if downcast_integers and pd.api.types.is_integer_dtype(col_type):
             c_min = df_clean[col].min()
             c_max = df_clean[col].max()
-            # Check which integer type can safely hold the min and max values
+
             if c_min > np.iinfo(np.int8).min and c_max < np.iinfo(np.int8).max:
                 df_clean[col] = df_clean[col].astype(np.int8)
             elif c_min > np.iinfo(np.int16).min and c_max < np.iinfo(np.int16).max:
@@ -380,45 +420,46 @@ def optimize_memory_usage(
             elif c_min > np.iinfo(np.int32).min and c_max < np.iinfo(np.int32).max:
                 df_clean[col] = df_clean[col].astype(np.int32)
 
-        # 2. Optimize Floats
         elif downcast_floats and pd.api.types.is_float_dtype(col_type):
             c_min = df_clean[col].min()
             c_max = df_clean[col].max()
+
             if c_min > np.finfo(np.float32).min and c_max < np.finfo(np.float32).max:
                 df_clean[col] = df_clean[col].astype(np.float32)
 
-        # 3. Optimize Strings (Categoricals)
         elif categorize_strings and pd.api.types.is_object_dtype(col_type):
             num_unique = df_clean[col].nunique()
             num_total = len(df_clean[col])
-            # If the number of unique values is less than 50% of the total rows,
-            # converting to category saves memory.
+
             if num_unique / num_total < 0.5:
                 df_clean[col] = df_clean[col].astype("category")
 
     return df_clean
 
 
-# ==========================================
-#               DATA IMPUTATION
-# ==========================================
+# =============================================================================
+# Data imputation
+# =============================================================================
 
 
 def impute_numerical_features(
-    df: pd.DataFrame, columns: list, strategy: str = "median"
+    df: pd.DataFrame,
+    columns: list,
+    strategy: str = "median",
 ) -> pd.DataFrame:
-    """
-    Selectively imputes missing values in specified numerical columns.
+    """Impute missing values in selected numerical columns.
 
     Args:
-        df (pd.DataFrame): The input DataFrame.
-        columns (list): List of numerical column names to impute.
-        strategy (str): Imputation method ('median', 'mean', 'mode', or 'zero').
+        df: Input DataFrame.
+        columns: Numeric column names to impute.
+        strategy: Imputation strategy. Supported values are ``"median"``,
+            ``"mean"``, ``"mode"``, and ``"zero"``.
 
     Returns:
-        pd.DataFrame: DataFrame with specified numerical columns imputed.
+        A new DataFrame with selected numerical columns imputed.
     """
     df_clean = df.copy()
+
     for col in columns:
         if col in df_clean.columns and pd.api.types.is_numeric_dtype(df_clean[col]):
             if strategy == "median":
@@ -437,20 +478,23 @@ def impute_numerical_features(
 
 
 def impute_categorical_features(
-    df: pd.DataFrame, columns: list, strategy: str = "Unknown"
+    df: pd.DataFrame,
+    columns: list,
+    strategy: str = "Unknown",
 ) -> pd.DataFrame:
-    """
-    Selectively imputes missing values in specified categorical or text columns.
+    """Impute missing values in selected categorical columns.
 
     Args:
-        df (pd.DataFrame): The input DataFrame.
-        columns (list): List of categorical column names to impute.
-        strategy (str): Imputation method ('unknown', 'mode', or 'forward fill').
+        df: Input DataFrame.
+        columns: Categorical or text column names to impute.
+        strategy: Imputation strategy. Supported values are ``"unknown"``,
+            ``"mode"``, and ``"forward fill"``.
 
     Returns:
-        pd.DataFrame: DataFrame with specified categorical columns imputed.
+        A new DataFrame with selected categorical columns imputed.
     """
     df_clean = df.copy()
+
     for col in columns:
         if col in df_clean.columns:
             if strategy == "mode":
@@ -460,16 +504,19 @@ def impute_categorical_features(
                     else "Unknown"
                 )
                 df_clean[col] = df_clean[col].fillna(fill_val)
+
             elif strategy == "forward fill":
                 df_clean[col] = df_clean[col].ffill().fillna("Unknown")
+
             else:
                 df_clean[col] = df_clean[col].fillna("Unknown")
+
     return df_clean
 
 
-# ==========================================
-#              OUTLIER TREATMENT
-# ==========================================
+# =============================================================================
+# Outlier treatment
+# =============================================================================
 
 
 def handle_outliers(
@@ -481,20 +528,24 @@ def handle_outliers(
     zscore_threshold: float = 3.0,
     percentile_range: tuple = (0.01, 0.99),
 ) -> pd.DataFrame:
-    """
-    Detects and handles numerical outliers using various statistical methods.
+    """Detect and treat outliers in selected numerical columns.
+
+    Supports IQR bounds, Z-score bounds, and percentile-based bounds. Outliers
+    can be capped, replaced with missing values, or removed by dropping rows.
 
     Args:
-        df (pd.DataFrame): The input DataFrame.
-        columns (list): List of numeric column names to process.
-        method (str): Detection method ('iqr', 'zscore', 'percentile').
-        action (str): What to do with outliers ('drop', 'cap', 'nan').
-        iqr_multiplier (float): Multiplier for IQR bounds.
-        zscore_threshold (float): Number of standard deviations for Z-score.
-        percentile_range (tuple): (lower_percentile, upper_percentile) for clipping.
+        df: Input DataFrame.
+        columns: Numeric column names to process.
+        method: Detection method. Supported values are ``"iqr"``, ``"zscore"``,
+            and ``"percentile"``.
+        action: Treatment method. Supported values are ``"drop"``, ``"cap"``,
+            and ``"nan"``.
+        iqr_multiplier: Multiplier applied to the interquartile range.
+        zscore_threshold: Number of standard deviations used for Z-score bounds.
+        percentile_range: Lower and upper quantiles used for percentile bounds.
 
     Returns:
-        pd.DataFrame: DataFrame with outliers processed.
+        A new DataFrame with selected outliers treated.
     """
     df_clean = df.copy()
 
@@ -504,36 +555,36 @@ def handle_outliers(
         ):
             continue
 
-        # 1. Calculate Mathematical Bounds
         if method == "iqr":
             q1 = df_clean[col].quantile(0.25)
             q3 = df_clean[col].quantile(0.75)
             iqr = q3 - q1
             lower_bound = q1 - (iqr_multiplier * iqr)
             upper_bound = q3 + (iqr_multiplier * iqr)
+
         elif method == "zscore":
             mean = df_clean[col].mean()
             std = df_clean[col].std()
             lower_bound = mean - (zscore_threshold * std)
             upper_bound = mean + (zscore_threshold * std)
+
         elif method == "percentile":
             lower_bound = df_clean[col].quantile(percentile_range[0])
             upper_bound = df_clean[col].quantile(percentile_range[1])
+
         else:
             continue
 
-        # 2. Apply the Selected Action
         if action == "drop":
-            # Keep rows that are strictly within the bounds (or are NaN, so we don't accidentally drop NaNs here)
             valid_mask = (
                 (df_clean[col] >= lower_bound) & (df_clean[col] <= upper_bound)
             ) | df_clean[col].isna()
             df_clean = df_clean[valid_mask]
+
         elif action == "cap":
-            # Winsorization: Clip extreme values to the exact boundary limits
             df_clean[col] = np.clip(df_clean[col], lower_bound, upper_bound)
+
         elif action == "nan":
-            # Replace extreme values with NaN to be imputed later
             outlier_mask = (df_clean[col] < lower_bound) | (df_clean[col] > upper_bound)
             df_clean.loc[outlier_mask, col] = np.nan
 
@@ -548,23 +599,23 @@ def summarize_outliers(
     zscore_threshold: float = 3.0,
     percentile_range: tuple = (0.01, 0.99),
 ) -> pd.DataFrame:
-    """
-    Calculates the distribution of outliers in specified columns without altering the underlying data.
+    """Summarize outlier counts in selected numerical columns.
 
-    Acts as a dry-run profiler to evaluate the impact of selected statistical thresholds.
-    This allows the user interface to dynamically render preview tables before executing
-    destructive operations.
+    Performs a dry-run analysis using the chosen statistical thresholding method
+    without modifying the underlying data.
 
     Args:
-        df (pd.DataFrame): The input DataFrame.
-        columns (list): List of numeric column names to analyze.
-        method (str, optional): Statistical detection method ('iqr', 'zscore', or 'percentile'). Defaults to 'iqr'.
-        iqr_multiplier (float, optional): Multiplier for the Interquartile Range bounds. Defaults to 1.5.
-        zscore_threshold (float, optional): Standard deviation threshold for Z-score bounds. Defaults to 3.0.
-        percentile_range (tuple, optional): Tuple of (lower_percentile, upper_percentile). Defaults to (0.01, 0.99).
+        df: Input DataFrame.
+        columns: Numeric column names to analyze.
+        method: Detection method. Supported values are ``"iqr"``, ``"zscore"``,
+            and ``"percentile"``.
+        iqr_multiplier: Multiplier applied to the interquartile range.
+        zscore_threshold: Number of standard deviations used for Z-score bounds.
+        percentile_range: Lower and upper quantiles used for percentile bounds.
 
     Returns:
-        pd.DataFrame: A summary table containing the feature name, raw outlier count, and percentage of total data affected.
+        A summary DataFrame containing feature names, outlier counts, and the
+        percentage of rows affected.
     """
     summary = []
 
@@ -578,51 +629,59 @@ def summarize_outliers(
             iqr = q3 - q1
             lower_bound = q1 - (iqr_multiplier * iqr)
             upper_bound = q3 + (iqr_multiplier * iqr)
+
         elif method == "zscore":
             mean = df[col].mean()
             std = df[col].std()
             lower_bound = mean - (zscore_threshold * std)
             upper_bound = mean + (zscore_threshold * std)
+
         elif method == "percentile":
             lower_bound = df[col].quantile(percentile_range[0])
             upper_bound = df[col].quantile(percentile_range[1])
+
         else:
             continue
 
         outliers = ((df[col] < lower_bound) | (df[col] > upper_bound)).sum()
         pct = (outliers / len(df)) * 100
 
-        summary.append({"Feature": col, "Outlier Count": outliers, "% of Data": pct})
+        summary.append(
+            {
+                "Feature": col,
+                "Outlier Count": outliers,
+                "% of Data": pct,
+            }
+        )
 
     return pd.DataFrame(summary)
 
 
-# ==========================================
-#           SKEWNESS TRANSFORMATION
-# ==========================================
+# =============================================================================
+# Skewness transformation
+# =============================================================================
 
 
 def summarize_skewness(df: pd.DataFrame, columns: list) -> pd.DataFrame:
-    """
-    Calculates the skewness coefficient for numerical columns and categorizes the severity.
+    """Summarize skewness severity for selected numerical columns.
 
     Args:
-        df (pd.DataFrame): The input DataFrame.
-        columns (list): List of numerical column names to analyze.
+        df: Input DataFrame.
+        columns: Numeric column names to analyze.
 
     Returns:
-        pd.DataFrame: A summary table with Skewness scores and diagnostic labels.
+        A summary DataFrame containing feature names, skewness values, and
+        diagnostic labels.
     """
     summary = []
+
     for col in columns:
         if col in df.columns and pd.api.types.is_numeric_dtype(df[col]):
             skew_val = df[col].skew()
 
-            # Skip columns where skewness cannot be calculated (e.g., all identical values)
             if pd.isna(skew_val):
                 continue
 
-            # Categorize severity based on standard statistical thresholds
             if abs(skew_val) > 1.0:
                 severity = "Highly Skewed"
             elif abs(skew_val) > 0.5:
@@ -631,28 +690,39 @@ def summarize_skewness(df: pd.DataFrame, columns: list) -> pd.DataFrame:
                 severity = "Symmetric"
 
             summary.append(
-                {"Feature": col, "Skewness": skew_val, "Diagnosis": severity}
+                {
+                    "Feature": col,
+                    "Skewness": skew_val,
+                    "Diagnosis": severity,
+                }
             )
 
     return pd.DataFrame(summary)
 
 
 def fix_numerical_skewness(
-    df: pd.DataFrame, columns: list, method: str = "yeo-johnson"
+    df: pd.DataFrame,
+    columns: list,
+    method: str = "yeo-johnson",
 ) -> pd.DataFrame:
-    """
-    Applies mathematical transformations to correct distribution skewness.
-    Includes defensive checks to prevent mathematical domain errors and
-    uses boolean masking to safely handle missing values (NaNs) without
-    triggering length mismatch errors.
+    """Apply distribution transformations to selected numerical columns.
+
+    Safely ignores missing values during transformation by applying operations
+    only to non-null rows and assigning the transformed values back to the same
+    locations.
 
     Args:
-        df (pd.DataFrame): The input DataFrame.
-        columns (list): Columns to transform.
-        method (str): Transformation method ('yeo-johnson', 'box-cox', 'log1p', 'sqrt').
+        df: Input DataFrame.
+        columns: Numeric column names to transform.
+        method: Transformation method. Supported values are ``"yeo-johnson"``,
+            ``"box-cox"``, ``"log1p"``, and ``"sqrt"``.
 
     Returns:
-        pd.DataFrame: Transformed DataFrame.
+        A new DataFrame with transformed numerical columns.
+
+    Raises:
+        ValueError: If ``"log1p"``, ``"sqrt"``, or ``"box-cox"`` is selected
+            for data outside the valid mathematical domain.
     """
     df_clean = df.copy()
 
@@ -662,77 +732,85 @@ def fix_numerical_skewness(
         ):
             continue
 
-        # Create a boolean mask to safely ignore NaNs during transformation
+        df_clean[col] = df_clean[col].astype(float)
+
         not_null_mask = df_clean[col].notna()
 
-        # If the column is entirely nulls, skip it
         if not not_null_mask.any():
             continue
 
         min_val = df_clean.loc[not_null_mask, col].min()
 
-        # 1. Log1p Transformation (log(1+x))
         if method == "log1p":
             if min_val < -1:
                 raise ValueError(
-                    f"Feature '{col}' contains values < -1. Log1p requires values >= -1."
+                    f"Feature '{col}' contains values < -1. Log1p requires "
+                    "values >= -1."
                 )
+
             df_clean.loc[not_null_mask, col] = np.log1p(
                 df_clean.loc[not_null_mask, col]
             )
 
-        # 2. Square Root Transformation
         elif method == "sqrt":
             if min_val < 0:
                 raise ValueError(
-                    f"Feature '{col}' contains negative values. Square Root requires positive values."
+                    f"Feature '{col}' contains negative values. Square Root "
+                    "requires positive values."
                 )
+
             df_clean.loc[not_null_mask, col] = np.sqrt(df_clean.loc[not_null_mask, col])
 
-        # 3. Box-Cox Power Transformation
         elif method == "box-cox":
             if min_val <= 0:
                 raise ValueError(
-                    f"Feature '{col}' contains zero or negative values. Box-Cox requires strictly positive data (>0). Use Yeo-Johnson instead."
+                    f"Feature '{col}' contains zero or negative values. Box-Cox "
+                    "requires strictly positive data (>0). Use Yeo-Johnson "
+                    "instead."
                 )
-            # Apply only to non-null slice and assign back to the exact non-null slice
+
             transformed_data, _ = boxcox(df_clean.loc[not_null_mask, col])
             df_clean.loc[not_null_mask, col] = transformed_data
 
-        # 4. Yeo-Johnson Power Transformation (Safest)
         elif method == "yeo-johnson":
-            # Safely handles positive, zero, and negative values while ignoring NaNs
             transformed_data, _ = yeojohnson(df_clean.loc[not_null_mask, col])
             df_clean.loc[not_null_mask, col] = transformed_data
 
     return df_clean
 
 
-# ==========================================
-#           SCALING & ENCODING
-# ==========================================
+# =============================================================================
+# Scaling and encoding
+# =============================================================================
 
 
 def scale_numerical_features(
-    df: pd.DataFrame, columns: list, method: str = "standard"
+    df: pd.DataFrame,
+    columns: list,
+    method: str = "standard",
 ) -> pd.DataFrame:
-    """
-    Scales numerical features using various statistical distributions.
-    Safely ignores missing values (NaNs) during calculation to prevent crashes.
+    """Scale selected numerical columns.
+
+    Applies the selected scikit-learn scaler independently to each numeric
+    column. Missing values are ignored during fitting and transformation.
 
     Args:
-        df (pd.DataFrame): The input DataFrame.
-        columns (list): Numerical columns to scale.
-        method (str): 'standard', 'minmax', 'robust', or 'maxabs'.
+        df: Input DataFrame.
+        columns: Numeric column names to scale.
+        method: Scaling method. Supported values are ``"standard"``,
+            ``"minmax"``, ``"robust"``, and ``"maxabs"``.
 
     Returns:
-        pd.DataFrame: Transformed DataFrame.
+        A new DataFrame with selected numerical columns scaled.
+
+    Raises:
+        ValueError: If the selected scaling method is not supported.
     """
     df_clean = df.copy()
+
     if not columns:
         return df_clean
 
-    # Map string method to the actual scikit-learn object
     scalers = {
         "standard": StandardScaler(),
         "minmax": MinMaxScaler(),
@@ -747,48 +825,50 @@ def scale_numerical_features(
 
     for col in columns:
         if col in df_clean.columns and pd.api.types.is_numeric_dtype(df_clean[col]):
-            # Create a mask to scale ONLY non-null values
             not_null_mask = df_clean[col].notna()
 
             if not_null_mask.any():
-                # scikit-learn expects 2D arrays, hence [[col]] reshaping
                 scaled_data = scaler.fit_transform(df_clean.loc[not_null_mask, [col]])
-                # Flatten back to 1D and assign
+                df_clean[col] = df_clean[col].astype("float64")
                 df_clean.loc[not_null_mask, col] = scaled_data.flatten()
 
     return df_clean
 
 
 def encode_categorical_features(
-    df: pd.DataFrame, columns: list, method: str = "onehot"
+    df: pd.DataFrame,
+    columns: list,
+    method: str = "onehot",
 ) -> pd.DataFrame:
-    """
-    Converts text categories into machine-readable numerical formats.
+    """Encode selected categorical columns.
+
+    Supports one-hot encoding through pandas dummy variables and label encoding
+    through pandas factorization.
 
     Args:
-        df (pd.DataFrame): The input DataFrame.
-        columns (list): Categorical columns to encode.
-        method (str): 'onehot' (dummy variables) or 'label' (ordinal integers).
+        df: Input DataFrame.
+        columns: Categorical column names to encode.
+        method: Encoding method. Supported values are ``"onehot"`` and
+            ``"label"``.
 
     Returns:
-        pd.DataFrame: Transformed DataFrame.
+        A new DataFrame with selected categorical columns encoded.
     """
     df_clean = df.copy()
+
     if not columns:
         return df_clean
 
     valid_cols = [col for col in columns if col in df_clean.columns]
 
     if method == "onehot":
-        # Use pandas built-in dummy encoding (automatically drops original columns)
-        # dtype=int ensures output is 0/1 integers instead of True/False booleans
         df_clean = pd.get_dummies(df_clean, columns=valid_cols, dtype=int)
 
     elif method == "label":
         for col in valid_cols:
             not_null_mask = df_clean[col].notna()
-            # Factorize converts unique labels into integers (0, 1, 2...)
             labels, _ = pd.factorize(df_clean.loc[not_null_mask, col])
             df_clean.loc[not_null_mask, col] = labels
+            df_clean[col] = df_clean[col].astype("float64")
 
     return df_clean
