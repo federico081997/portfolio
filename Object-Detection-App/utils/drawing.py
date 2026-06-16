@@ -7,17 +7,16 @@ confidence scores, track IDs, and simple visual styles on images or frames.
 
 import cv2
 import numpy as np
-from PIL import Image
 
 from core.detector import prepare_image
 
 
 def hex_to_bgr(hex_color):
     """
-    Converts a hex color into a BGR tuple, required by the CV2 module.
+    Converts a hexadecimal RGB color into a BGR tuple.
 
     Args:
-        hex_color: Color in hex format.
+        hex_color: Color in hexadecimal format.
 
     Returns:
         BGR color tuple.
@@ -26,50 +25,32 @@ def hex_to_bgr(hex_color):
     if not isinstance(hex_color, str):
         raise ValueError("Hex color must be a string.")
 
-    # Remove surrounding whitespace and the optional leading "#" character.
-    hex_color = hex_color.strip().replace("#", "")
+    # Remove surrounding whitespace.
+    hex_color = hex_color.strip()
 
-    # A full RGB hex color must contain exactly six characters: RRGGBB.
+    # Remove one optional leading "#" character.
+    if hex_color.startswith("#"):
+        hex_color = hex_color[1:]
+
+    # A complete hexadecimal color must contain six characters: RRGGBB.
     if len(hex_color) != 6:
-        raise ValueError("Hex color must contain 6 characters.")
+        raise ValueError(
+            "Hex color must contain exactly 6 characters in RRGGBB format."
+        )
 
-    # Split the string into red, green, and blue pairs, then convert
-    # each pair from hexadecimal base 16 into a decimal integer.
-    rgb_color = tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
+    try:
+        # Convert the red, green, and blue hexadecimal pairs to integers.
+        red = int(hex_color[0:2], 16)
+        green = int(hex_color[2:4], 16)
+        blue = int(hex_color[4:6], 16)
 
-    # Reverse the tuple to obtain the BGR format
-    return rgb_color[::-1]
+    except ValueError as error:
+        raise ValueError(
+            "Hex color can only contain characters from 0-9 and A-F."
+        ) from error
 
-
-def clip_box_to_image(x1, y1, x2, y2, image_width, image_height):
-    """
-    Keeps bounding box coordinates inside the image.
-
-    Args:
-        x1: Left box coordinate.
-        y1: Top box coordinate.
-        x2: Right box coordinate.
-        y2: Bottom box coordinate.
-        image_width: Width of the image.
-        image_height: Height of the image.
-
-    Returns:
-        Clipped bounding box coordinates.
-    """
-    # Limit the left x-coordinate to the valid horizontal pixel range.
-    x1 = max(0, min(x1, image_width - 1))
-
-    # Limit the top y-coordinate to the valid vertical pixel range.
-    y1 = max(0, min(y1, image_height - 1))
-
-    # Limit the right x-coordinate to the valid horizontal pixel range.
-    x2 = max(0, min(x2, image_width - 1))
-
-    # Limit the bottom y-coordinate to the valid vertical pixel range.
-    y2 = max(0, min(y2, image_height - 1))
-
-    # Return the corrected coordinates in x1, y1, x2, y2 order.
-    return x1, y1, x2, y2
+    # OpenCV uses blue, green, and red channel order.
+    return blue, green, red
 
 
 def build_label_text(detection, show_label=True, show_confidence=True):
@@ -93,7 +74,7 @@ def build_label_text(detection, show_label=True, show_confidence=True):
 
     # Add the confidence score rounded to two decimal places.
     if show_confidence:
-        label_parts.append(f"{detection.get('confidence'):.2f}")
+        label_parts.append(f"{float(detection.get('confidence')):.2f}")
 
     # Combine the available parts into one label string.
     return " | ".join(label_parts)
@@ -225,13 +206,35 @@ def draw_filled_box(image, x1, y1, x2, y2, box_color, box_thickness, alpha=0.18)
 
 
 def _calculate_intersection_box(rectangle_a, rectangle_b):
-    ax1, ax2, ay1, ay2 = rectangle_a
-    bx1, bx2, by1, by2 = rectangle_b
+    """
+    Calculates the intersection area between two axis-aligned rectangles.
 
-    intersection_width = max(0, min(ax2, bx2) - min(ax1, bx1))
+    Args:
+        rectangle_a: First rectangle in (x1, y1, x2, y2) format.
+        rectangle_b: Second rectangle in (x1, y1, x2, y2) format.
 
-    intersection_height = max(0, min(ay2, by2) - min(ay1, by1))
+    Returns:
+        Intersection area in square pixels.
+    """
+    # Unpack the top-left and bottom-right coordinates of both rectangles.
+    ax1, ay1, ax2, ay2 = rectangle_a
+    bx1, by1, bx2, by2 = rectangle_b
 
+    # The intersection begins at the larger left coordinate and ends at
+    # the smaller right coordinate.
+    intersection_width = max(
+        0,
+        min(ax2, bx2) - max(ax1, bx1),
+    )
+
+    # The intersection begins at the larger top coordinate and ends at
+    # the smaller bottom coordinate.
+    intersection_height = max(
+        0,
+        min(ay2, by2) - max(ay1, by1),
+    )
+
+    # A width or height of zero means the rectangles do not overlap.
     return intersection_width * intersection_height
 
 
@@ -825,308 +828,223 @@ def draw_labels(
     return image, current_label_positions
 
 
-# def draw_single_detection(
-#     image,
-#     detection,
-#     box_color=(0, 255, 0),
-#     text_color=(255, 255, 255),
-#     box_thickness=2,
-#     text_size=1.0,
-#     text_thickness=2,
-#     show_label=True,
-#     show_confidence=True,
-#     show_track_id=False,
-#     show_box=True,
-#     text_background=True,
-#     box_style="standard",
-#     text_position="above",
-# ):
-#     """
-#     Draws one detection on an image.
+def draw_detections(
+    image,
+    detections,
+    box_color="#00ff00",
+    label_background_color="#00ff00",
+    text_color="#ffffff",
+    box_thickness=2,
+    text_size=0.6,
+    text_thickness=1,
+    alpha=0.18,
+    show_label=True,
+    show_confidence=True,
+    text_background=True,
+    box_style="standard",
+    text_font=cv2.FONT_HERSHEY_COMPLEX,
+    text_position="automatic",
+    previous_label_positions=None,
+):
+    """
+    Draws bounding boxes and labels for all valid detections.
 
-#     Args:
-#         image: Image where the detection is drawn.
-#         detection: Detection dictionary.
-#         box_color: Bounding box color.
-#         text_color: Label text color.
-#         box_thickness: Bounding box thickness.
-#         text_size: Label text size.
-#         text_thickness: Label text thickness.
-#         show_label: Whether to show the class name.
-#         show_confidence: Whether to show the confidence score.
-#         show_track_id: Whether to show the tracking ID.
-#         show_box: Whether to draw the bounding box.
-#         text_background: Whether to draw a text background.
-#         box_style: Bounding box style.
-#         text_position: Position of the label.
-#     """
-#     image_height, image_width = image.shape[:2]
+    Args:
+        image: PIL image, NumPy image, or uploaded image file.
+        detections: List of detection dictionaries.
+        box_color: Bounding-box color as a hexadecimal string.
+        label_background_color: Label background color as a hexadecimal string.
+        text_color: Label text color as a hexadecimal string.
+        box_thickness: Bounding-box line thickness.
+        text_size: Scale applied to the label text.
+        text_thickness: Thickness of the label text.
+        alpha: Opacity of the filled bounding-box interior.
+        show_label: Whether to include class names in labels.
+        show_confidence: Whether to include confidence scores in labels.
+        text_background: Whether to draw a filled background behind each label.
+        box_style: Bounding-box style, such as standard, corner, or filled.
+        text_font: OpenCV font used to measure and draw labels.
+        text_position: Automatic or predefined label position.
+        previous_label_positions: Previous position names indexed by track ID.
 
-#     x1, y1, x2, y2 = get_box_coordinates(detection)
-#     x1, y1, x2, y2 = clip_box_to_image(x1, y1, x2, y2, image_width, image_height)
+    Returns:
+        Annotated image as a NumPy array.
+        Dictionary of current label position names indexed by track ID.
+    """
+    # Convert the input into the standard NumPy image format expected by
+    # the drawing functions.
+    output_image = prepare_image(image)
 
-#     if x2 <= x1 or y2 <= y1:
-#         return
+    # Convert hexadecimal colors selected in Streamlit into the BGR format
+    # expected by OpenCV drawing functions.
+    bgr_box_color = hex_to_bgr(box_color)
+    bgr_label_background_color = hex_to_bgr(label_background_color)
+    bgr_text_color = hex_to_bgr(text_color)
 
-#     if show_box:
-#         if box_style == "corner":
-#             draw_corner_box(image, x1, y1, x2, y2, box_color, box_thickness)
-#         elif box_style == "filled":
-#             draw_filled_box(image, x1, y1, x2, y2, box_color, box_thickness)
-#         else:
-#             draw_standard_box(image, x1, y1, x2, y2, box_color, box_thickness)
+    # Use an empty position history when processing a single image or the
+    # first frame of a tracked video.
+    if previous_label_positions is None:
+        previous_label_positions = {}
 
-#     label_text = build_label_text(
-#         detection,
-#         show_label=show_label,
-#         show_confidence=show_confidence,
-#         show_track_id=show_track_id,
-#     )
+    # Return the prepared image immediately when no objects were detected.
+    # Copying the position dictionary prevents accidental modification of
+    # the caller's original tracking state.
+    if not detections:
+        return output_image, previous_label_positions.copy()
 
-#     draw_label(
-#         image=image,
-#         label_text=label_text,
-#         x1=x1,
-#         y1=y1,
-#         x2=x2,
-#         y2=y2,
-#         text_color=text_color,
-#         box_color=box_color,
-#         text_size=text_size,
-#         text_thickness=text_thickness,
-#         text_background=text_background,
-#         text_position=text_position,
-#     )
+    # Store only detections with valid positive-area bounding boxes. These
+    # detections will be used for both box drawing and label placement.
+    valid_detections = []
 
+    # Draw the bounding box associated with each valid detection.
+    for detection in detections:
+        # Convert floating-point model coordinates into integer image pixels.
+        x1 = int(round(detection["x1"]))
+        y1 = int(round(detection["y1"]))
+        x2 = int(round(detection["x2"]))
+        y2 = int(round(detection["y2"]))
 
-# def draw_detections(
-#     image,
-#     detections,
-#     box_color="#00ff00",
-#     text_color="#ffffff",
-#     box_thickness=2,
-#     text_size=1.0,
-#     text_thickness=2,
-#     show_label=True,
-#     show_confidence=True,
-#     show_track_id=False,
-#     show_box=True,
-#     text_background=True,
-#     box_style="standard",
-#     text_position="above",
-# ):
-#     """
-#     Draws all detections on an image.
+        # Ignore reversed or zero-area bounding boxes because they cannot be
+        # drawn or used reliably for label placement.
+        if x2 <= x1 or y2 <= y1:
+            continue
 
-#     Args:
-#         image: PIL image or NumPy image.
-#         detections: List of detection dictionaries.
-#         box_color: Bounding box color.
-#         text_color: Label text color.
-#         box_thickness: Bounding box thickness.
-#         text_size: Label text size.
-#         text_thickness: Label text thickness.
-#         show_label: Whether to show class names.
-#         show_confidence: Whether to show confidence scores.
-#         show_track_id: Whether to show tracking IDs.
-#         show_box: Whether to draw bounding boxes.
-#         text_background: Whether to draw text backgrounds.
-#         box_style: Bounding box style.
-#         text_position: Position of labels.
+        valid_detections.append(detection)
 
-#     Returns:
-#         Annotated RGB image as a NumPy array.
-#     """
-#     output_image = prepare_image_for_drawing(image)
+        # Draw a corner-only bounding box when the corner style is selected.
+        if box_style == "corner":
+            draw_corner_box(
+                output_image,
+                x1,
+                y1,
+                x2,
+                y2,
+                bgr_box_color,
+                box_thickness,
+            )
 
-#     box_color = normalize_color(box_color, default=(0, 255, 0))
-#     text_color = normalize_color(text_color, default=(255, 255, 255))
+        # Draw a semi-transparent interior together with the box outline.
+        elif box_style == "filled":
+            draw_filled_box(
+                output_image,
+                x1,
+                y1,
+                x2,
+                y2,
+                bgr_box_color,
+                box_thickness,
+                alpha,
+            )
 
-#     box_thickness = int(box_thickness)
-#     text_thickness = int(text_thickness)
-#     text_size = float(text_size)
+        # Use a standard rectangular outline for the "standard" style.
+        else:
+            cv2.rectangle(
+                output_image, (x1, y1), (x2, y2), bgr_box_color, box_thickness
+            )
 
-#     if detections is None:
-#         return output_image
+    # Calculate and draw all labels in one operation. Processing labels
+    # together allows automatic placement to account for every detection box,
+    # previously positioned labels, and tracked positions from the prior frame.
+    output_image, current_label_positions = draw_labels(
+        image=output_image,
+        detections=valid_detections,
+        text_color=bgr_text_color,
+        box_color=bgr_label_background_color,
+        text_size=text_size,
+        text_thickness=text_thickness,
+        text_background=text_background,
+        text_font=text_font,
+        text_position=text_position,
+        previous_label_positions=previous_label_positions,
+        show_label=show_label,
+        show_confidence=show_confidence,
+    )
 
-#     for detection in detections:
-#         draw_single_detection(
-#             image=output_image,
-#             detection=detection,
-#             box_color=box_color,
-#             text_color=text_color,
-#             box_thickness=box_thickness,
-#             text_size=text_size,
-#             text_thickness=text_thickness,
-#             show_label=show_label,
-#             show_confidence=show_confidence,
-#             show_track_id=show_track_id,
-#             show_box=show_box,
-#             text_background=text_background,
-#             box_style=box_style,
-#             text_position=text_position,
-#         )
-
-#     return output_image
+    return output_image, current_label_positions
 
 
-# def draw_object_trails(image, trails, trail_color="#ffff00", trail_thickness=2):
-#     """
-#     Draws object movement trails.
+def draw_object_trails(
+    image,
+    trails,
+    trail_color="#ffff00",
+    trail_thickness=2,
+):
+    """
+    Draws movement trails for tracked objects.
 
-#     Args:
-#         image: PIL image or NumPy image.
-#         trails: Dictionary of track IDs and point lists.
-#         trail_color: Trail line color.
-#         trail_thickness: Trail line thickness.
+    Args:
+        image: PIL image, NumPy image, or uploaded image file.
+        trails: Dictionary mapping track IDs to sequences of (x, y) points.
+        trail_color: Trail color as a hexadecimal string.
+        trail_thickness: Trail line thickness in pixels.
 
-#     Returns:
-#         Image with trails as a NumPy array.
-#     """
-#     output_image = prepare_image_for_drawing(image)
-#     trail_color = normalize_color(trail_color, default=(255, 255, 0))
-#     trail_thickness = int(trail_thickness)
+    Returns:
+        Image containing the object trails as a NumPy array.
+    """
+    # Convert the input into the standard NumPy image format expected by
+    # OpenCV drawing functions.
+    output_image = prepare_image(image)
 
-#     if not trails:
-#         return output_image
+    # Convert the hexadecimal color into the BGR format expected by OpenCV.
+    bgr_trail_color = hex_to_bgr(trail_color)
 
-#     for points in trails.values():
-#         if len(points) < 2:
-#             continue
+    # Return the prepared image unchanged when no tracking history is available.
+    if not trails:
+        return output_image
 
-#         for index in range(1, len(points)):
-#             start_point = tuple(int(value) for value in points[index - 1])
-#             end_point = tuple(int(value) for value in points[index])
+    # Retrieve the image dimensions used to constrain trail coordinates.
+    # NumPy image shapes follow the order (height, width, channels).
+    image_height, image_width = output_image.shape[:2]
 
-#             cv2.line(
-#                 output_image,
-#                 start_point,
-#                 end_point,
-#                 trail_color,
-#                 trail_thickness,
-#             )
+    # Process the recorded path belonging to each tracked object.
+    for points in trails.values():
+        # A visible line requires at least two recorded positions.
+        if points is None or len(points) < 2:
+            continue
 
-#     return output_image
+        # Store only valid points converted into image pixel coordinates.
+        valid_points = []
 
+        for point in points:
+            # Ignore missing or malformed coordinates.
+            if point is None or len(point) != 2:
+                continue
 
-# def draw_counting_line(
-#     image,
-#     line_position,
-#     orientation="horizontal",
-#     line_color="#ff0000",
-#     line_thickness=2,
-# ):
-#     """
-#     Draws a counting line on an image.
+            point_x, point_y = point
 
-#     Args:
-#         image: PIL image or NumPy image.
-#         line_position: Position of the counting line.
-#         orientation: Line orientation.
-#         line_color: Line color.
-#         line_thickness: Line thickness.
+            # Convert potentially floating-point tracking coordinates into
+            # integer pixel locations.
+            point_x = int(round(point_x))
+            point_y = int(round(point_y))
 
-#     Returns:
-#         Image with a counting line as a NumPy array.
-#     """
-#     output_image = prepare_image_for_drawing(image)
-#     image_height, image_width = output_image.shape[:2]
+            # Constrain each point to the visible image boundaries.
+            point_x = max(0, min(point_x, image_width - 1))
+            point_y = max(0, min(point_y, image_height - 1))
 
-#     line_color = normalize_color(line_color, default=(255, 0, 0))
-#     line_thickness = int(line_thickness)
+            valid_points.append((point_x, point_y))
 
-#     if orientation == "vertical":
-#         x = int(line_position)
-#         x = max(0, min(x, image_width - 1))
-#         start_point = (x, 0)
-#         end_point = (x, image_height)
-#     else:
-#         y = int(line_position)
-#         y = max(0, min(y, image_height - 1))
-#         start_point = (0, y)
-#         end_point = (image_width, y)
+        # Validation may remove malformed points, so confirm that at least
+        # two usable coordinates remain before constructing the path.
+        if len(valid_points) < 2:
+            continue
 
-#     cv2.line(
-#         output_image,
-#         start_point,
-#         end_point,
-#         line_color,
-#         line_thickness,
-#     )
+        # OpenCV expects polyline coordinates with shape
+        # (number_of_points, 1, 2).
+        trail_array = np.array(
+            valid_points,
+            dtype=np.int32,
+        ).reshape((-1, 1, 2))
 
-#     return output_image
+        # Draw one open, anti-aliased path connecting the object's positions
+        # in chronological order.
+        cv2.polylines(
+            output_image,
+            trail_array,
+            isClosed=False,
+            color=bgr_trail_color,
+            thickness=trail_thickness,
+            lineType=cv2.LINE_AA,
+        )
 
-
-# def get_detection_center(detection):
-#     """
-#     Gets the center point of a detection box.
-
-#     Args:
-#         detection: Detection dictionary.
-
-#     Returns:
-#         Center point as an x, y tuple.
-#     """
-#     x1, y1, x2, y2 = get_box_coordinates(detection)
-
-#     center_x = int((x1 + x2) / 2)
-#     center_y = int((y1 + y2) / 2)
-
-#     return center_x, center_y
-
-
-# def crop_detection(image, detection):
-#     """
-#     Crops one detected object from an image.
-
-#     Args:
-#         image: PIL image or NumPy image.
-#         detection: Detection dictionary.
-
-#     Returns:
-#         Cropped object image.
-#     """
-#     prepared_image = prepare_image_for_drawing(image)
-#     image_height, image_width = prepared_image.shape[:2]
-
-#     x1, y1, x2, y2 = get_box_coordinates(detection)
-#     x1, y1, x2, y2 = clip_box_to_image(x1, y1, x2, y2, image_width, image_height)
-
-#     if x2 <= x1 or y2 <= y1:
-#         return None
-
-#     return prepared_image[y1:y2, x1:x2].copy()
-
-
-# def crop_all_detections(image, detections):
-#     """
-#     Crops all detected objects from an image.
-
-#     Args:
-#         image: PIL image or NumPy image.
-#         detections: List of detection dictionaries.
-
-#     Returns:
-#         List of cropped object dictionaries.
-#     """
-#     crops = []
-
-#     if not detections:
-#         return crops
-
-#     for index, detection in enumerate(detections):
-#         crop = crop_detection(image, detection)
-
-#         if crop is None:
-#             continue
-
-#         crops.append(
-#             {
-#                 "index": index,
-#                 "class_name": detection.get("class_name", "object"),
-#                 "confidence": detection.get("confidence"),
-#                 "image": crop,
-#             }
-#         )
-
-#     return crops
+    # Return the image after drawing all available object trails.
+    return output_image

@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 from ultralytics import YOLO
+import cv2
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_MODEL_PATH = BASE_DIR / "models" / "yolo26n.pt"
@@ -34,13 +35,13 @@ def load_model(model_path=DEFAULT_MODEL_PATH):
 
 def prepare_image(image):
     """
-    Converts an input image into a NumPy RGB image.
+    Converts an input image into a uint8 NumPy BGR image.
 
     Args:
         image: PIL image, NumPy image, or uploaded image file.
 
     Returns:
-        RGB image as a NumPy array.
+        BGR image as a NumPy array.
     """
     # Ensure an image was provided
     if image is None:
@@ -48,24 +49,32 @@ def prepare_image(image):
 
     # Handle images that are already represented as NumPy arrays.
     if isinstance(image, np.ndarray):
-        # Convert a two-dimensional grayscale image into three RGB channels.
+        # Raise an error when the image is empty
+        if image.size == 0:
+            raise ValueError("The image is empty")
+
+        # Convert a two-dimensional grayscale image into three BGR channels.
         if image.ndim == 2:
-            image = np.stack([image, image, image], axis=-1)
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
 
         elif image.ndim == 3:
             num_channels = image.shape[2]
 
-            # Expand a single-channel image into three identical channels.
+            # Convert a one-channel array into a standard BGR image.
             if num_channels == 1:
-                image = np.repeat(image, 3, axis=2)
+                image = cv2.cvtColor(image[:, :, 0], cv2.COLOR_GRAY2BGR)
 
-            # Remove the alpha channel from an RGBA image.
+            # Accept standard three-channel BGR images unchanged.
+            elif num_channels == 3:
+                pass
+
+            # Remove the alpha channel from a BGRA image.
             elif image.shape[2] == 4:
-                image = image[:, :, :3]
+                image = cv2.cvtColor(image, cv2.COLOR_BGRA2BGR)
 
-            # Accept standard three-channel RGB images unchanged.
-            elif image.shape[2] != 3:
-                raise ValueError("The image must have 1, 3 or 4 channels.")
+            # Accept standard three-channel BGR images unchanged.
+            else:
+                raise ValueError("The image must contain 1, 3, or 4 channels.")
 
         else:
             raise ValueError("The image must have 2 or 3 dimensions.")
@@ -90,19 +99,26 @@ def prepare_image(image):
                     "[0, 1] or [0, 255]"
                 )
 
-        # Constrain values to the valid pixel range, round them to the nearest
-        # integer, and convert the array to the standard image data type.
+        # Clip invalid integer ranges, round floating-point values, and
+        # convert to the standard OpenCV image data type.
         image = np.clip(image, 0, 255)
-        return np.rint(image).astype(np.uint8)
+        image = np.rint(image).astype(np.uint8)
 
-    # Convert a PIL image directly to RGB.
+        # Return a contiguous array suitable for OpenCV operations.
+        return np.ascontiguousarray(image)
+
+    # PIL images use RGB order, so convert them explicitly to BGR.
     if isinstance(image, Image.Image):
-        return np.array(image.convert("RGB"))
+        rgb_image = np.array(image.convert("RGB"))
+        return cv2.cvtColor(rgb_image, cv2.COLOR_RGB2BGR)
 
     # Treat any remaining input as a path or file-like object.
     try:
-        pil_image = Image.open(image).convert("RGB")
-        return np.array(pil_image)
+        # PIL reads the input in RGB order.
+        rgb_image = np.array(Image.open(image).convert("RGB"))
+
+        # Convert RGB into the BGR order expected by OpenCV.
+        return cv2.cvtColor(rgb_image, cv2.COLOR_RGB2BGR)
     except Exception as error:
         raise ValueError("Could not read the input image.") from error
 
