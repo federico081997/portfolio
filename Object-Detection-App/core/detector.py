@@ -14,8 +14,18 @@ from PIL import Image
 from ultralytics import YOLO
 import cv2
 
-BASE_DIR = Path(__file__).resolve().parent
-DEFAULT_MODEL_PATH = BASE_DIR / "models" / "yolo26n.pt"
+# Get the project root directory.
+# detector.py is inside core/, so parent.parent points to the project root.
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Store all YOLO model weights inside the models directory.
+MODEL_DIRECTORY = BASE_DIR / "models"
+
+# Create the directory if it does not already exist.
+MODEL_DIRECTORY.mkdir(parents=True, exist_ok=True)
+
+# Set the model loaded by default when the application starts.
+DEFAULT_MODEL_PATH = MODEL_DIRECTORY / "yolo26x.pt"
 
 
 @lru_cache(maxsize=4)
@@ -80,7 +90,7 @@ def prepare_image(image):
             raise ValueError("The image must have 2 or 3 dimensions.")
 
         # Validate and scale floating-point images.
-        if np.issubtype(image.dtype, np.floating):
+        if np.issubdtype(image.dtype, np.floating):
             # NaN and infinite values cannot be converted into valid pixels.
             if not np.isfinite(image).all():
                 raise ValueError("The image contains NaN or infinite values.")
@@ -132,6 +142,8 @@ def run_model(
     device=None,
     max_detections=300,
     tracking=False,
+    persist=False,
+    tracker="bytetrack.yaml",
 ):
     """
     Runs YOLO inference on one image.
@@ -144,7 +156,9 @@ def run_model(
         image_size: Image size used by the model.
         device: Device used for inference.
         max_detections: Maximum number of detections.
-        tracking: Whether to track objects across video frames.
+        tracking: Whether to run object tracking instead of prediction.
+        persist: Whether tracking IDs should persist between frames.
+        tracker: Ultralytics tracker configuration.
 
     Returns:
         Raw YOLO result for one image.
@@ -171,14 +185,17 @@ def run_model(
     if device:
         inference_kwargs["device"] = device
 
-    # Use YOLO tracking for video frames so detected objects can keep
-    # consistent track IDs across consecutive frames.
+    # Use tracking for sequential video frames so detections receive
+    # persistent object IDs.
     if tracking:
-        results = model.track(
-            **inference_kwargs,
-            persist=True,
-        )
-    # Use standard object detection for a single image.
+        inference_kwargs["persist"] = persist
+
+        if tracker:
+            inference_kwargs["tracker"] = tracker
+
+        results = model.track(**inference_kwargs)
+
+    # Use ordinary prediction for independent images.
     else:
         results = model.predict(**inference_kwargs)
 
@@ -287,33 +304,19 @@ def detections_to_dataframe(detections):
     Returns:
         DataFrame with detection results.
     """
-    # Define a consistent column order for both empty and populated results.
-    columns = [
-        "track_id",
-        "class_id",
-        "class_name",
-        "confidence",
-        "x1",
-        "y1",
-        "x2",
-        "y2",
-        "box_width",
-        "box_height",
-        "box_area",
-    ]
-
-    # Return an empty DataFrame with the expected structure when no
-    # detections are available.
+    # Return an empty DataFrame when no detections are available.
     if not detections:
-        return pd.DataFrame(columns=columns)
+        return pd.DataFrame()
 
-    # Convert the detection dictionaries into a DataFrame while preserving
-    # the predefined column order.
-    detection_df = pd.DataFrame(detections, columns=columns)
+    # Pandas creates one column for every key found in the dictionaries.
+    detection_df = pd.DataFrame(detections)
 
     # Keep video tracking IDs as integers while still allowing missing values
     # for images and non-tracked inference.
     detection_df["track_id"] = detection_df["track_id"].astype("Int64")
+
+    if "frame_number" in detection_df.columns:
+        detection_df["frame_number"] = detection_df["frame_number"].astype("Int64")
 
     # Return the detection dataframe
     return detection_df
@@ -328,9 +331,10 @@ def detect_objects(
     image_size=640,
     device=None,
     max_detections=300,
-    tracking=False,
     selected_classes=None,
-    return_dataframe=False,
+    tracking=False,
+    persist=False,
+    tracker="bytetrack.yaml",
 ):
     """
     Runs object detection and returns clean results.
@@ -345,10 +349,12 @@ def detect_objects(
         device: Device used for inference.
         max_detections: Maximum number of detections.
         selected_classes: Classes to keep.
-        return_dataframe: Whether to return a DataFrame.
+        tracking: Whether to run object tracking instead of prediction.
+        persist: Whether tracking IDs should persist between frames.
+        tracker: Ultralytics tracker configuration.
 
     Returns:
-        Detection results as a list or DataFrame.
+        Detection results as a list.
     """
     # Load the model only when an existing model instance is not provided.
     # Passing a previously loaded model avoids loading it again for every image.
@@ -366,6 +372,8 @@ def detect_objects(
         device=device,
         max_detections=max_detections,
         tracking=tracking,
+        persist=persist,
+        tracker=tracker,
     )
 
     # Convert the raw YOLO result into a list of structured detection
@@ -377,10 +385,6 @@ def detect_objects(
         detections,
         selected_classes=selected_classes,
     )
-
-    # Convert the detections into tabular form when requested.
-    if return_dataframe:
-        return detections_to_dataframe(detections)
 
     # Return the default list-of-dictionaries representation.
     return detections
@@ -440,4 +444,6 @@ def count_detections_by_class(detections):
         .value_counts()
         .rename_axis("class_name")
         .reset_index(name="count")
+        .sort_values(by="count", ascending=False)
+        .reset_index(drop=True)
     )

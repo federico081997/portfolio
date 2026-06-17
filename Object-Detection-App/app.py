@@ -1,44 +1,54 @@
+"""
+Main entry point for the Streamlit object-detection application.
+
+The page layout, controls, and mode-specific logic live in separate component
+modules so this file remains intentionally small.
+"""
+
 import streamlit as st
 
-# Import our custom modular components
-from ui.sidebar import render_sidebar
-from ui.views import render_image_view, render_video_view
-from models.detector import load_model
+from components.camera_mode import render_camera_mode
+from components.image_mode import render_image_mode
+from components.shared import (
+    initialize_session_state,
+    render_app_header,
+    reset_camera_state,
+)
+from components.sidebar import render_sidebar
+from components.styles import apply_app_styles
+from components.video_mode import render_video_mode
 
-def main():
-    """
-    Main execution entry point for the Streamlit application.
-    Initializes the UI, loads the machine learning model, and routes user
-    interactions to the appropriate component views.
-    """
-    # 1. Global Page Configuration (Must be the first Streamlit command)
-    st.set_page_config(
-        page_title="Object Detection & Tracking",
-        page_icon="👁️",
-        layout="wide"
-    )
+# Configure the Streamlit page before rendering other interface elements.
+st.set_page_config(
+    page_title="VisionTrack Studio",
+    page_icon="🎯",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
-    # 2. Render the sidebar control panel and capture the user's configurations
-    settings = render_sidebar()
+# Apply the application's custom CSS styles.
+apply_app_styles()
 
-    # 3. Load the ML model
-    # Because of our @st.cache_resource decorator in detector.py, this only
-    # executes once. On subsequent interactions, it instantly returns the cached model.
-    with st.spinner("Loading AI Model Weights..."):
-        model = load_model()
+# Create the session-state values used by all application modes.
+initialize_session_state()
 
-    # 4. Application Routing
-    # Direct the data flow based on the user's selected activity
-    if settings["activity"] == "Upload Image":
-        render_image_view(model, settings)
+# Display the application title and description.
+render_app_header()
 
-    elif settings["activity"] == "Upload Video":
-        render_video_view(model, settings)
+# Render the sidebar and collect the selected configuration.
+app_config = render_sidebar()
 
-    elif settings["activity"] == "Use Live Camera":
-        # Placeholder for our highly complex WebRTC implementation
-        st.warning("Live Camera module is pending integration. Please use Image or Video modes.")
-        st.info("Check back once src/utils/webrtc_stream.py is complete.")
+# Release the webcam and clear camera-specific state whenever the user
+# switches away from live-camera mode.
+if app_config["mode"] != "Live camera":
+    reset_camera_state(release_capture=True)
 
-if __name__ == "__main__":
-    main()
+# Render the workflow selected in the sidebar.
+if app_config["mode"] == "Upload photo":
+    render_image_mode(app_config)
+
+elif app_config["mode"] == "Upload video":
+    render_video_mode(app_config)
+
+else:
+    render_camera_mode(app_config)

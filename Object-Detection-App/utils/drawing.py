@@ -1030,7 +1030,7 @@ def draw_object_trails(
 
         # OpenCV expects polyline coordinates with shape
         # (number_of_points, 1, 2).
-        trail_array = np.array(
+        trail_array = np.asarray(
             valid_points,
             dtype=np.int32,
         ).reshape((-1, 1, 2))
@@ -1039,7 +1039,7 @@ def draw_object_trails(
         # in chronological order.
         cv2.polylines(
             output_image,
-            trail_array,
+            [trail_array],
             isClosed=False,
             color=bgr_trail_color,
             thickness=trail_thickness,
