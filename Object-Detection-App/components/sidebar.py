@@ -52,7 +52,7 @@ def render_sidebar():
             (
                 label
                 for label, path in model_options.items()
-                if path == str(DEFAULT_MODEL_PATH)
+                if path == DEFAULT_MODEL_PATH
             ),
             "YOLO26 Nano",
         )
