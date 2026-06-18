@@ -22,7 +22,7 @@ def open_camera(
     width=None,
     height=None,
     fps=None,
-    backend=None,
+    backend=cv2.CAP_DSHOW,
     buffer_size=1,
 ):
     """
@@ -65,8 +65,8 @@ def open_camera(
             raise ValueError("width must be greater than zero.")
 
         capture.set(
-            cv2.CAP_PROP_FRAME_WIDTH,
-            width,
+            cv2.CAP_PROP_FOURCC,
+            cv2.VideoWriter_fourcc(*"MJPG"),
         )
 
     # Request a specific frame height when supplied.
@@ -261,13 +261,15 @@ def process_camera_frame(
         raise ValueError("No camera frame was provided.")
 
     # Convert frame and trail settings into the required numeric types.
-    frame_step = int(frame_step)
     trail_thickness = int(trail_thickness)
     max_trail_length = int(max_trail_length)
 
-    # Invalid camera FPS values should not be used for timestamps.
-    if camera_fps <= 0:
-        camera_fps = None
+    # Validate the optional camera FPS value.
+    if camera_fps is not None:
+        camera_fps = float(camera_fps)
+
+        if camera_fps <= 0:
+            camera_fps = None
 
     # Load the model only when the caller has not supplied an existing
     # model instance. A persistent model should normally be stored in
