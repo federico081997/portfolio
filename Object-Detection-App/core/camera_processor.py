@@ -11,6 +11,7 @@ st.session_state.
 """
 
 import cv2
+import sys
 
 from core.detector import DEFAULT_MODEL_PATH, load_model
 from core.image_processor import process_image
@@ -22,7 +23,7 @@ def open_camera(
     width=None,
     height=None,
     fps=None,
-    backend=cv2.CAP_DSHOW,
+    backend=None,
     buffer_size=1,
 ):
     """
@@ -41,7 +42,18 @@ def open_camera(
     """
     camera_index = int(camera_index)
 
-    # Use a specific OpenCV backend only when one is explicitly provided.
+    # Select the appropriate default backend for the operating system
+    # running the Python process.
+    if backend is None:
+        if sys.platform.startswith("linux"):
+            backend = cv2.CAP_V4L2
+
+        elif sys.platform.startswith("win"):
+            backend = cv2.CAP_DSHOW
+
+        else:
+            backend = cv2.CAP_ANY
+
     if backend is None:
         capture = cv2.VideoCapture(camera_index)
     else:
@@ -207,6 +219,7 @@ def process_camera_frame(
     trail_color="#ffff00",
     trail_thickness=2,
     max_trail_length=30,
+    max_inactive_frames=90,
     tracking=True,
     persist=True,
     tracker="bytetrack.yaml",
@@ -246,6 +259,8 @@ def process_camera_frame(
         trail_color: Trail color in hexadecimal format.
         trail_thickness: Trail line thickness in pixels.
         max_trail_length: Maximum number of positions retained per track.
+        max_inactive_frames: Number of consecutive frames a missing track is
+            retained before its trail is removed.
         tracking: Whether to use YOLO object tracking.
         persist: Whether tracking IDs persist between frames.
         tracker: Ultralytics tracker configuration.
@@ -263,6 +278,7 @@ def process_camera_frame(
     # Convert frame and trail settings into the required numeric types.
     trail_thickness = int(trail_thickness)
     max_trail_length = int(max_trail_length)
+    max_inactive_frames = int(max_inactive_frames)
 
     # Validate the optional camera FPS value.
     if camera_fps is not None:
@@ -277,12 +293,25 @@ def process_camera_frame(
     if model is None:
         model = load_model(model_path)
 
-    # Copy the existing trail histories so this function returns an explicit
-    # updated state rather than unexpectedly modifying the caller's object.
-    if trails is None:
-        updated_trails = {}
-    else:
-        updated_trails = {track_id: list(points) for track_id, points in trails.items()}
+    # Copy the persisted trail records so the caller's state is not modified
+    # unexpectedly inside this function.
+    updated_trails = {}
+
+    for track_id, trail_data in (trails or {}).items():
+        if isinstance(trail_data, dict):
+            points = list(trail_data.get("points", []))
+            last_seen_frame = int(trail_data.get("last_seen_frame", frame_number))
+
+        else:
+            # Backward compatibility for session state created by the previous
+            # version, where each value was only a list of points.
+            points = list(trail_data)
+            last_seen_frame = frame_number
+
+        updated_trails[track_id] = {
+            "points": points,
+            "last_seen_frame": last_seen_frame,
+        }
 
     # Run inference and tracking without drawing annotations. This allows
     # trails to be drawn first and bounding boxes and labels afterward.
@@ -339,12 +368,31 @@ def process_camera_frame(
         center_y = (detection["y1"] + detection["y2"]) / 2
 
         if track_id not in updated_trails:
-            updated_trails[track_id] = []
+            updated_trails[track_id] = {
+                "points": [],
+                "last_seen_frame": frame_number,
+            }
 
-        updated_trails[track_id].append((center_x, center_y))
+        # Add the current centre position.
+        updated_trails[track_id]["points"].append((center_x, center_y))
 
-        # Retain only the latest positions so each trail remains bounded.
-        updated_trails[track_id] = updated_trails[track_id][-max_trail_length:]
+        # Keep only the most recent trail positions.
+        updated_trails[track_id]["points"] = updated_trails[track_id]["points"][
+            -max_trail_length:
+        ]
+
+        # Mark this track as visible in the current frame.
+        updated_trails[track_id]["last_seen_frame"] = frame_number
+
+    # Remove tracks that have not appeared for too many consecutive frames.
+    stale_track_ids = [
+        track_id
+        for track_id, trail_data in updated_trails.items()
+        if (frame_number - trail_data["last_seen_frame"] > max_inactive_frames)
+    ]
+
+    for track_id in stale_track_ids:
+        del updated_trails[track_id]
 
     # Start with the clean BGR frame returned by process_image().
     drawing_frame = frame_result["original_image"].copy()
@@ -352,9 +400,9 @@ def process_camera_frame(
     # A visible trail requires at least two points belonging to the same
     # persistent tracking ID.
     active_trails = {
-        track_id: updated_trails[track_id]
+        track_id: updated_trails[track_id]["points"]
         for track_id in active_track_ids
-        if (track_id in updated_trails and len(updated_trails[track_id]) >= 2)
+        if (track_id in updated_trails and len(updated_trails[track_id]["points"]) >= 2)
     }
 
     # Draw trails before boxes and labels so all annotations remain visible

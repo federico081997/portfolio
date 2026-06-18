@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+import cv2
 
 import pandas as pd
 import streamlit as st
@@ -9,25 +10,21 @@ import streamlit as st
 from core.detector import get_model_class_names, load_model
 
 
-@st.cache_resource(show_spinner=False)
+@st.cache_resource(
+    show_spinner=False,
+    scope="session",
+)
 def get_cached_model(model_path):
     """
-    Loads and caches a YOLO model.
+    Loads one prediction model for the current Streamlit session.
 
     Args:
         model_path: Path or name of the YOLO model.
 
     Returns:
-        Loaded YOLO model.
+        Session-scoped YOLO model.
     """
-    # Convert Path objects into strings because the model-loading function
-    # expects a filesystem path or model name in string format.
-    model_path = str(model_path)
-
-    # Load and return the model. Streamlit stores the returned model in its
-    # resource cache and reuses it when this function is called again with
-    # the same model path.
-    return load_model(model_path)
+    return load_model(str(model_path))
 
 
 def initialize_session_state():
@@ -54,6 +51,14 @@ def initialize_session_state():
         "camera_label_positions": None,
         # Stores the number of the current camera frame.
         "camera_frame_number": 0,
+        # Dedicated tracking model for the current camera session.
+        "camera_model": None,
+        # Configuration associated with the camera tracking model.
+        "camera_model_path": None,
+        "camera_tracker": None,
+        # Tracking-sensitive configuration used when the camera was opened.
+        "camera_tracking_config": None,
+        "browser_snapshot_result": None,
     }
 
     # Add each default value only when the corresponding session-state key
@@ -149,6 +154,12 @@ def reset_camera_state(release_capture=True):
 
     # Remove the most recent camera-processing result.
     st.session_state["camera_result"] = None
+
+    # Remove the dedicated camera tracking model.
+    st.session_state["camera_model"] = None
+    st.session_state["camera_model_path"] = None
+    st.session_state["camera_tracker"] = None
+    st.session_state["camera_tracking_config"] = None
 
 
 def render_detection_metrics(summary, video_mode=False):
@@ -252,6 +263,32 @@ def dataframe_to_csv_bytes(dataframe):
     # Encode the CSV text as UTF-8 bytes because Streamlit download buttons
     # expect binary data when downloading generated file content.
     return csv_text.encode("utf-8")
+
+
+def image_to_png_bytes(image):
+    """
+    Converts a BGR NumPy image into downloadable PNG bytes.
+
+    Args:
+        image: Image represented as a BGR NumPy array.
+
+    Returns:
+        PNG-encoded image content as bytes.
+    """
+    if image is None:
+        raise ValueError("No image was provided for export.")
+
+    # Encode the BGR NumPy image directly as PNG data.
+    # OpenCV expects BGR input, which matches the application's image format.
+    success, encoded_image = cv2.imencode(
+        ".png",
+        image,
+    )
+
+    if not success:
+        raise RuntimeError("The image could not be encoded as PNG.")
+
+    return encoded_image.tobytes()
 
 
 def object_to_json_bytes(value):

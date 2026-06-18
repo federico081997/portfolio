@@ -121,7 +121,7 @@ def render_video_mode(config):
         max_trail_length = st.slider(
             "Trail history length",
             min_value=2,
-            max_value=300,
+            max_value=100,
             value=50,
             disabled=not show_trails,
         )
@@ -141,12 +141,6 @@ def render_video_mode(config):
                 "Use 0 to calculate output FPS automatically from the "
                 "source FPS and frame step."
             ),
-        )
-
-        # Select the codec passed to OpenCV's VideoWriter.
-        codec = st.selectbox(
-            "Video codec",
-            ["mp4v", "avc1"],
         )
 
         # Set the filename used when the annotated video is downloaded.
@@ -194,13 +188,17 @@ def render_video_mode(config):
         # appropriate output frame rate automatically.
         output_fps = None if output_fps_value == 0 else float(output_fps_value)
 
-        # Remove directory information from the user-provided filename.
-        # This prevents the filename from being treated as a filesystem path.
-        output_name = Path(custom_output_name).name or "annotated_video.mp4"
+        # Remove directory information and surrounding whitespace from the
+        # user-provided download filename.
+        output_name = Path(custom_output_name.strip()).name
 
-        # Add an MP4 extension when the user did not provide one.
-        if not Path(output_name).suffix:
-            output_name += ".mp4"
+        # Use a valid default when the filename is empty.
+        if not output_name:
+            output_name = "annotated_video.mp4"
+        else:
+            # The generated output is always an MP4 file, so replace any existing
+            # extension rather than only adding one when no extension is present.
+            output_name = str(Path(output_name).with_suffix(".mp4"))
 
         try:
             # Display a spinner while the video is decoded, tracked,
@@ -208,7 +206,6 @@ def render_video_mode(config):
             with st.spinner("Running detection, tracking, drawing, and analytics..."):
                 result = process_video(
                     video_source=uploaded_video,
-                    model=config["model"],
                     model_path=config["model_path"],
                     confidence_threshold=config["confidence_threshold"],
                     iou_threshold=config["iou_threshold"],
@@ -236,7 +233,7 @@ def render_video_mode(config):
                     frame_step=int(frame_step),
                     output_fps=output_fps,
                     output_path=None,
-                    codec=codec,
+                    codec="mp4v",
                     max_processed_frames=max_processed_frames,
                     progress_callback=partial(
                         update_video_progress,

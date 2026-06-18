@@ -28,18 +28,16 @@ MODEL_DIRECTORY.mkdir(parents=True, exist_ok=True)
 DEFAULT_MODEL_PATH = MODEL_DIRECTORY / "yolo26x.pt"
 
 
-@lru_cache(maxsize=4)
 def load_model(model_path=DEFAULT_MODEL_PATH):
     """
-    Loads a YOLO model.
+    Loads a new YOLO model instance.
 
     Args:
         model_path: Path or name of the YOLO model.
 
     Returns:
-        Loaded YOLO model.
+        Newly loaded YOLO model.
     """
-    # Return the YOLO model object and cache it for future use
     return YOLO(str(model_path))
 
 

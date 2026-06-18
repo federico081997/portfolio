@@ -1,6 +1,7 @@
 """Streamlit UI for uploaded-image object detection."""
 
 import streamlit as st
+from pathlib import Path
 
 from core.image_processor import process_image
 from components.shared import (
@@ -8,6 +9,7 @@ from components.shared import (
     object_to_json_bytes,
     render_class_chart,
     render_detection_metrics,
+    image_to_png_bytes,
 )
 
 
@@ -177,23 +179,46 @@ def render_image_mode(config):
     with export_tab:
         st.markdown("### Export image results")
 
-        # Place the CSV and JSON download buttons next to each other.
-        download_columns = st.columns(2)
+        # Use the uploaded image name as the base of the annotated image filename.
+        source_name = result["summary"].get("source_name") or "image"
+
+        # Remove the original extension and force PNG because the image bytes
+        # are encoded using the PNG format.
+        image_stem = Path(str(source_name)).stem or "image"
+        annotated_filename = f"{image_stem}_annotated.png"
+
+        # Place the annotated image, CSV, and JSON downloads next to each other.
+        download_columns = st.columns(3)
+
+        # Convert the annotated BGR image into downloadable PNG bytes.
+        download_columns[0].download_button(
+            "Download annotated photo",
+            data=image_to_png_bytes(
+                result["annotated_image"],
+            ),
+            file_name=annotated_filename,
+            mime="image/png",
+            width="stretch",
+        )
 
         # Convert the detection DataFrame into downloadable CSV bytes.
-        download_columns[0].download_button(
+        download_columns[1].download_button(
             "Download detections CSV",
-            data=dataframe_to_csv_bytes(result["detection_df"]),
-            file_name="image_detections.csv",
+            data=dataframe_to_csv_bytes(
+                result["detection_df"],
+            ),
+            file_name=f"{image_stem}_detections.csv",
             mime="text/csv",
             width="stretch",
         )
 
         # Convert the summary dictionary into downloadable JSON bytes.
-        download_columns[1].download_button(
+        download_columns[2].download_button(
             "Download summary JSON",
-            data=object_to_json_bytes(result["summary"]),
-            file_name="image_summary.json",
+            data=object_to_json_bytes(
+                result["summary"],
+            ),
+            file_name=f"{image_stem}_summary.json",
             mime="application/json",
             width="stretch",
         )

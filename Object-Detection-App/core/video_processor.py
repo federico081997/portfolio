@@ -5,6 +5,8 @@ This file reads a video frame by frame, processes selected frames with the
 image processor, writes an annotated video, and combines all detection data.
 """
 
+import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -151,6 +153,92 @@ def create_video_writer(output_path, width, height, fps, codec="mp4v"):
     return writer
 
 
+def convert_video_to_h264(input_path, output_path):
+    """
+    Converts a video into a browser-compatible H.264 MP4 file.
+
+    Args:
+        input_path: Path to the intermediate OpenCV video.
+        output_path: Path where the H.264 MP4 video is written.
+
+    Returns:
+        Path to the converted H.264 video.
+    """
+    input_path = Path(input_path)
+    output_path = Path(output_path)
+
+    if not input_path.exists():
+        raise FileNotFoundError(f"The intermediate video does not exist: {input_path}")
+
+    if input_path.stat().st_size == 0:
+        raise RuntimeError("The intermediate video is empty and cannot be converted.")
+
+    # Find the FFmpeg executable installed on the current system.
+    ffmpeg_path = shutil.which("ffmpeg")
+
+    if ffmpeg_path is None:
+        raise RuntimeError(
+            "FFmpeg is not installed or is not available on PATH. "
+            "Install FFmpeg to create browser-compatible H.264 videos."
+        )
+
+    # Make sure the destination directory exists.
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    command = [
+        ffmpeg_path,
+        "-y",
+        # Read the OpenCV-generated intermediate video.
+        "-i",
+        str(input_path),
+        # The OpenCV processing pipeline does not preserve source audio.
+        "-an",
+        # Encode the video using H.264.
+        "-c:v",
+        "libx264",
+        # Use a broadly supported pixel format for browser playback.
+        "-pix_fmt",
+        "yuv420p",
+        # Reasonable balance between conversion speed and compression.
+        "-preset",
+        "fast",
+        "-crf",
+        "23",
+        # Move MP4 metadata to the beginning of the file so playback can
+        # begin before the complete file has been read.
+        "-movflags",
+        "+faststart",
+        str(output_path),
+    ]
+
+    completed_process = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    if completed_process.returncode != 0:
+        # Remove any incomplete output produced by FFmpeg.
+        output_path.unlink(missing_ok=True)
+
+        error_message = (
+            completed_process.stderr.strip() or "Unknown FFmpeg conversion error."
+        )
+
+        raise RuntimeError(
+            "Could not convert the processed video to H.264.\n" f"{error_message}"
+        )
+
+    if not output_path.exists() or output_path.stat().st_size == 0:
+        raise RuntimeError("FFmpeg completed without creating a valid output video.")
+
+    return str(output_path)
+
+
 def combine_detection_tables(detection_tables):
     """
     Combines frame-level detection DataFrames into one video-level table.
@@ -252,7 +340,6 @@ def calculate_unique_object_counts(detection_df):
 
 def process_video(
     video_source,
-    model=None,
     model_path=DEFAULT_MODEL_PATH,
     confidence_threshold=0.25,
     iou_threshold=0.45,
@@ -339,9 +426,9 @@ def process_video(
     trail_thickness = int(trail_thickness)
     max_trail_length = int(max_trail_length)
 
-    # Load the model only when an existing model was not supplied.
-    if model is None:
-        model = load_model(model_path)
+    # Create a fresh model for this video sequence.
+    # Its tracking state cannot leak into another video or camera session.
+    video_model = load_model(model_path)
 
     # Uploaded Streamlit files must be saved temporarily because OpenCV
     # VideoCapture requires a filesystem path. Existing paths can be used
@@ -367,10 +454,17 @@ def process_video(
     writer = None
 
     try:
-        # Create either the requested output path or a unique temporary
-        # MP4 path for the annotated video.
-        output_path = create_output_video_path(
+        # This is the final browser-compatible H.264 output path returned to
+        # Streamlit and used by the download button.
+        final_output_path = create_output_video_path(
             output_path=output_path,
+            output_directory=output_directory,
+        )
+
+        # OpenCV first writes an intermediate MP4V video. It is converted to H.264
+        # only after VideoWriter has been released.
+        intermediate_output_path = create_output_video_path(
+            output_path=None,
             output_directory=output_directory,
         )
 
@@ -410,7 +504,7 @@ def process_video(
 
         # Create the writer that receives each annotated BGR frame.
         writer = create_video_writer(
-            output_path=output_path,
+            output_path=intermediate_output_path,
             width=video_width,
             height=video_height,
             fps=output_fps,
@@ -452,7 +546,7 @@ def process_video(
                 # summary generation for the selected source frame.
                 frame_result = process_image(
                     image=frame,
-                    model=model,
+                    model=video_model,
                     model_path=model_path,
                     confidence_threshold=confidence_threshold,
                     iou_threshold=iou_threshold,
@@ -611,6 +705,21 @@ def process_video(
     if processed_frame_count == 0:
         raise ValueError("No video frames were processed.")
 
+    try:
+        # Convert the finalized OpenCV video into an H.264 MP4 that browsers
+        # and Streamlit's video player can decode.
+        output_path = convert_video_to_h264(
+            input_path=intermediate_output_path,
+            output_path=final_output_path,
+        )
+
+    finally:
+        # The intermediate MP4V video is no longer needed after conversion.
+        try:
+            Path(intermediate_output_path).unlink(missing_ok=True)
+        except OSError:
+            pass
+
     # Ensure the interface displays complete progress after successful
     # processing, including processing stopped by max_processed_frames.
     if progress_callback is not None:
@@ -651,7 +760,6 @@ def process_video(
     # and exported reports.
     summary = {
         "source_name": source_name,
-        "output_video_path": output_path,
         "video_width": video_width,
         "video_height": video_height,
         "source_fps": round(source_fps, 2),

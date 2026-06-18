@@ -17,6 +17,8 @@ def render_sidebar():
     Returns:
         Dictionary containing the selected model, mode, and configuration values.
     """
+    camera_running = st.session_state.get("camera_running", False)
+
     # Place all controls inside the Streamlit sidebar.
     with st.sidebar:
         # Display the application name at the top of the sidebar.
@@ -32,6 +34,8 @@ def render_sidebar():
                 "Run local webcam inference.",
             ],
         )
+
+        lock_camera_inference = mode == "Live camera" and camera_running
 
         # Separate navigation from the inference settings.
         st.divider()
@@ -66,6 +70,7 @@ def render_sidebar():
                 "Nano is the fastest and lightest option. Larger models "
                 "generally require more memory and processing time."
             ),
+            disabled=lock_camera_inference,
         )
 
         # Retrieve the model filename associated with the selected label.
@@ -86,8 +91,9 @@ def render_sidebar():
 
         # Let the user select from the devices available on the current system.
         device_label = st.selectbox(
-            "Inference device",
+            "Inference Device",
             options=device_options,
+            disabled=lock_camera_inference,
         )
 
         # Convert readable interface labels into Ultralytics device values.
@@ -104,6 +110,7 @@ def render_sidebar():
             max_value=1.0,
             value=0.25,
             step=0.01,
+            disabled=lock_camera_inference,
         )
 
         # Set the IoU threshold used during non-maximum suppression.
@@ -114,6 +121,7 @@ def render_sidebar():
             max_value=1.0,
             value=0.45,
             step=0.01,
+            disabled=lock_camera_inference,
         )
 
         # Select the image size used internally by YOLO during inference.
@@ -123,6 +131,7 @@ def render_sidebar():
             "Inference Image Size",
             options=[320, 416, 512, 640, 768, 960, 1280],
             value=640,
+            disabled=lock_camera_inference,
         )
 
         # Limit the number of detections returned for one image or frame.
@@ -132,6 +141,7 @@ def render_sidebar():
             max_value=2000,
             value=300,
             step=10,
+            disabled=lock_camera_inference,
         )
 
         # Define default values before attempting to load the model.
@@ -165,7 +175,7 @@ def render_sidebar():
             default=[],
             placeholder="Leave empty to keep all classes",
             # Disable the control when no model classes are available.
-            disabled=not class_names,
+            disabled=not class_names or lock_camera_inference,
         )
 
         # Separate inference controls from drawing controls.
