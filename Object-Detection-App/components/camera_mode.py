@@ -1,8 +1,6 @@
 """Streamlit UI for local live-camera and browser-snapshot modes."""
 
 import streamlit as st
-import sys
-import platform
 
 from core.camera_processor import (
     get_camera_properties,
