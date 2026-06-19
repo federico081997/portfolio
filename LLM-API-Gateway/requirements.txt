@@ -1,0 +1,8 @@
+fastapi[standard]
+pydantic-settings
+httpx
+tenacity
+redis
+prometheus-client
+pytest
+pytest-asyncio
