@@ -88,11 +88,29 @@ class Settings(BaseSettings):
         le=600,
     )
 
+    write_timeout_seconds: float = Field(
+        default=30.0,
+        gt=0,
+        le=600,
+    )
+
+    pool_timeout_seconds: float = Field(
+        default=5.0,
+        gt=0,
+        le=60,
+    )
+
     # Reliability and usage-control settings.
     retry_attempts: int = Field(
         default=3,
         ge=1,
         le=10,
+    )
+
+    retry_max_wait_seconds: float = Field(
+        default=8.0,
+        gt=0,
+        le=60,
     )
 
     rate_limit_per_minute: int = Field(
